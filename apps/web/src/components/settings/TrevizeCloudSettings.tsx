@@ -1,9 +1,11 @@
+import { useAtomValue } from "@effect/atom-react";
 import { findSavedTrevizeEnvironment, TrevizeApi } from "@t3tools/client-runtime/trevize";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { PlusIcon } from "lucide-react";
@@ -28,6 +30,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
+import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -67,6 +70,8 @@ function reportFailure(result: AtomCommandResult<unknown, unknown>, title: strin
   });
 }
 
+const DEFAULT_SETTINGS = Trevize.defaultTrevizeSettings();
+
 function environmentTitle(environment: TrevizeApi.TrevizeEnvironment): string {
   return environment.title?.trim() || environment.id;
 }
@@ -79,7 +84,7 @@ function environmentTitle(environment: TrevizeApi.TrevizeEnvironment): string {
 export function TrevizeCloudSettings() {
   const [settings, setSettings] = useLocalStorage(
     Trevize.TREVIZE_SETTINGS_STORAGE_KEY,
-    { baseUrl: Trevize.defaultTrevizeBaseUrl(), workspaceId: null },
+    DEFAULT_SETTINGS,
     Trevize.TrevizeClientSettings,
   );
   // Undefined while the stored key is read.
@@ -123,11 +128,21 @@ export function TrevizeCloudSettings() {
       }
     >
       {apiKey === undefined ? null : config ? (
-        <TrevizeWorkspaceEnvironments
-          config={config}
-          workspaceId={settings.workspaceId}
-          onWorkspaceChange={(workspaceId) => setSettings({ ...settings, workspaceId })}
-        />
+        <>
+          <TrevizeAutoConnectRow
+            autoConnect={settings.autoConnect}
+            onAutoConnectChange={(autoConnect) =>
+              setSettings((current) => ({ ...current, autoConnect }))
+            }
+          />
+          <TrevizeWorkspaceEnvironments
+            config={config}
+            workspaceId={settings.workspaceId}
+            onWorkspaceChange={(workspaceId) =>
+              setSettings((current) => ({ ...current, workspaceId }))
+            }
+          />
+        </>
       ) : (
         <TrevizeSignInForm
           baseUrl={settings.baseUrl}
@@ -135,12 +150,56 @@ export function TrevizeCloudSettings() {
             const workspaceId = workspaces.some((item) => item.id === settings.workspaceId)
               ? settings.workspaceId
               : (workspaces[0]?.id ?? null);
-            setSettings({ baseUrl: signedIn.baseUrl, workspaceId });
+            setSettings((current) => ({ ...current, baseUrl: signedIn.baseUrl, workspaceId }));
             setApiKey(signedIn.apiKey);
           }}
         />
       )}
     </SettingsSection>
+  );
+}
+
+/** Background sync: pairs running environments and keeps the saved list current. */
+function TrevizeAutoConnectRow({
+  autoConnect,
+  onAutoConnectChange,
+}: {
+  readonly autoConnect: boolean;
+  readonly onAutoConnectChange: (autoConnect: boolean) => void;
+}) {
+  const sync = useAtomValue(Trevize.syncStateValueAtom);
+  const syncNow = useAtomCommand(Trevize.syncNow, { reportFailure: false });
+  return (
+    <SettingsRow
+      title="Automatically connect Trevize environments"
+      description={
+        sync.error
+          ? `Last sync failed: ${sync.error}`
+          : "Running environments of every workspace appear under Environments without clicking Connect. Archived ones are removed."
+      }
+      control={
+        <div className="flex items-center gap-2">
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={sync.syncing}
+            onClick={() => void syncNow()}
+          >
+            {sync.syncing ? <Spinner size="sm" /> : null}
+            Sync now
+          </Button>
+          <Switch
+            size="sm"
+            checked={autoConnect}
+            aria-label="Automatically connect Trevize environments"
+            onCheckedChange={(checked) => {
+              onAutoConnectChange(checked);
+              if (checked) void syncNow();
+            }}
+          />
+        </div>
+      }
+    />
   );
 }
 
@@ -248,6 +307,8 @@ function TrevizeWorkspaceEnvironments({
   const listEnvironments = useAtomCommand(Trevize.listEnvironments, { reportFailure: false });
   const connectEnvironment = useAtomCommand(Trevize.connectEnvironment, { reportFailure: false });
   const stopEnvironment = useAtomCommand(Trevize.stopEnvironment, { reportFailure: false });
+  const wakeEnvironment = useAtomCommand(Trevize.wakeEnvironment, { reportFailure: false });
+  const sync = useAtomValue(Trevize.syncStateValueAtom);
   const { environments: savedEnvironments } = useEnvironments();
   const [workspaces, setWorkspaces] = useState<ReadonlyArray<TrevizeApi.TrevizeWorkspace>>([]);
   // Keyed by workspace so switching workspaces never shows the previous list.
@@ -350,6 +411,12 @@ function TrevizeWorkspaceEnvironments({
       await refresh();
     });
 
+  const wake = (environment: TrevizeApi.TrevizeEnvironment, savedId: EnvironmentId) =>
+    withBusy(environment.id, async () => {
+      reportFailure(await wakeEnvironment(savedId), "Could not wake environment");
+      await refresh();
+    });
+
   const savedEntries = savedEnvironments.map((environment) => environment.entry);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
 
@@ -398,10 +465,14 @@ function TrevizeWorkspaceEnvironments({
         />
       ) : (
         environments.map((environment) => {
-          const saved = findSavedTrevizeEnvironment(savedEntries, environment.httpBaseUrl) !== null;
-          const busy = busyIds.has(environment.id);
+          const savedId = findSavedTrevizeEnvironment(savedEntries, environment.httpBaseUrl);
+          const saved = savedId !== null;
+          // A saved, stopped environment sleeps: its connection waits for a wake.
+          const sleeping = savedId !== null && environment.status === "stopped";
+          const busy =
+            busyIds.has(environment.id) || (savedId !== null && sync.waking.has(savedId));
           const statusText = [
-            STATUS_LABELS[environment.status],
+            sleeping ? "Sleeping" : STATUS_LABELS[environment.status],
             saved ? "Saved on this device" : null,
             environment.error ?? null,
           ]
@@ -425,15 +496,26 @@ function TrevizeWorkspaceEnvironments({
                       Stop
                     </Button>
                   ) : null}
-                  <Button
-                    size="sm"
-                    variant={saved ? "outline" : "default"}
-                    disabled={busy || environment.status === "failed"}
-                    onClick={() => void connect(environment)}
-                  >
-                    {busy ? <Spinner size="sm" /> : null}
-                    {saved ? "Reconnect" : "Connect"}
-                  </Button>
+                  {sleeping ? (
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void wake(environment, savedId)}
+                    >
+                      {busy ? <Spinner size="sm" /> : null}
+                      Wake
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant={saved ? "outline" : "default"}
+                      disabled={busy || environment.status === "failed"}
+                      onClick={() => void connect(environment)}
+                    >
+                      {busy ? <Spinner size="sm" /> : null}
+                      {saved ? "Reconnect" : "Connect"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

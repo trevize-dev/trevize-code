@@ -67,7 +67,8 @@ export const connectTrevizeEnvironment = Effect.fn("clientRuntime.trevize.connec
   },
 );
 
-function originOf(value: string): string | null {
+/** The origin Trevize environments are matched by, or null for an invalid URL. */
+export function trevizeOrigin(value: string): string | null {
   try {
     return new URL(value).origin;
   } catch {
@@ -84,14 +85,14 @@ export function findSavedTrevizeEnvironment(
   entries: Iterable<ConnectionCatalogEntry>,
   httpBaseUrl: string,
 ): EnvironmentId | null {
-  const origin = originOf(httpBaseUrl);
+  const origin = trevizeOrigin(httpBaseUrl);
   if (origin === null) return null;
   for (const entry of entries) {
     const matches = connectionRoutes(entry).some(
       (route) =>
         Option.isSome(route.profile) &&
         route.profile.value._tag === "BearerConnectionProfile" &&
-        originOf(route.profile.value.httpBaseUrl) === origin,
+        trevizeOrigin(route.profile.value.httpBaseUrl) === origin,
     );
     if (matches) return entry.target.environmentId;
   }

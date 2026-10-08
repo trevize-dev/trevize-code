@@ -39,15 +39,25 @@ checked out, so agents keep working when your own machines are off. Open
 before signing in.
 
 Pick a workspace to see its environments. **New environment** starts a sandbox
-with the repositories you choose, each added as a project. **Connect** pairs this
-device with the environment; it then appears under **Environments** like any
-other paired machine and reconnects on startup. Connecting a stopped environment
-wakes it first, which can take a minute. If a saved environment stops accepting
-this device, choose **Reconnect** to pair it again without adding a duplicate.
+with the repositories you choose, each added as a project. With **Automatically
+connect Trevize environments** on (the default), every running environment in
+any of your workspaces is paired with this device within about 30 seconds, so
+work started from Trevize, such as a task from Linear, shows up in the sidebar
+without any clicks. Environments that are archived, or that you lose access to,
+are removed from this device; environments you paired by hand are never
+touched. **Sync now** checks immediately.
+
+**Connect** pairs an environment by hand; it then appears under
+**Environments** like any other paired machine and reconnects on startup. If a
+saved environment stops accepting this device, choose **Reconnect** to pair it
+again without adding a duplicate.
+
+Trevize stops idle environments. A saved environment that is stopped shows as
+**Sleeping** and is not woken in the background. Opening one of its threads, or
+choosing **Wake**, starts it again, which can take a minute.
 
 Everyone in the workspace can connect to the same environment and sees the same
-threads. Trevize stops idle environments and keeps their files; **Stop** does
-this immediately. Signing out of Trevize Cloud forgets the API key on this
+threads. A stopped environment keeps its files; **Stop** stops one immediately. Signing out of Trevize Cloud forgets the API key on this
 device but keeps environments you already connected.
 
 ## Pair over a LAN or private network
