@@ -218,6 +218,30 @@ describe("Trevize API client", () => {
       expect(error.reason).toBe("timeout");
     }),
   );
+
+  it.effect("stops with the server's error when the environment failed to start", () =>
+    Effect.gen(function* () {
+      const error = yield* TrevizeApi.connectWhenReady(config, "env_1").pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp(
+            [],
+            [
+              () =>
+                Response.json({
+                  status: "failed",
+                  error: "Repository not found",
+                  retryAfterSeconds: 42,
+                }),
+            ],
+          ),
+        ),
+      );
+
+      expect(error.reason).toBe("failed");
+      expect(error.message).toContain("Repository not found");
+    }),
+  );
 });
 
 describe("connectTrevizeEnvironment", () => {

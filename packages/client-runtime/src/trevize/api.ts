@@ -75,7 +75,18 @@ const TrevizeConnectStarting = Schema.Struct({
   retryAfterSeconds: Schema.Number,
 });
 
-const TrevizeConnectResult = Schema.Union([TrevizeConnectReady, TrevizeConnectStarting]);
+/** Answered for a recently failed environment; connecting again after `retryAfterSeconds` retries the start. */
+const TrevizeConnectFailed = Schema.Struct({
+  status: Schema.Literal("failed"),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+  retryAfterSeconds: Schema.optional(Schema.Number),
+});
+
+const TrevizeConnectResult = Schema.Union([
+  TrevizeConnectReady,
+  TrevizeConnectStarting,
+  TrevizeConnectFailed,
+]);
 export type TrevizeConnectResult = typeof TrevizeConnectResult.Type;
 
 const WorkspacesResponse = Schema.Struct({
@@ -94,7 +105,7 @@ const ErrorBody = Schema.Struct({
 });
 
 export class TrevizeApiError extends Schema.TaggedError<TrevizeApiError>()("TrevizeApiError", {
-  reason: Schema.Literals(["unauthorized", "network", "request", "decode", "timeout"]),
+  reason: Schema.Literals(["unauthorized", "network", "request", "decode", "timeout", "failed"]),
   message: Schema.String,
   status: Schema.optional(Schema.Number),
 }) {}
@@ -275,6 +286,14 @@ export const connectWhenReady = Effect.fn("clientRuntime.trevize.connectWhenRead
     const result = yield* requestConnect(config, environmentId);
     if (result.status === "ready") {
       return result;
+    }
+    if (result.status === "failed") {
+      return yield* new TrevizeApiError({
+        reason: "failed",
+        message: result.error
+          ? `The Trevize environment failed to start: ${result.error}`
+          : "The Trevize environment failed to start. Try connecting again in a minute.",
+      });
     }
     const delayMs =
       Math.min(MAX_RETRY_SECONDS, Math.max(MIN_RETRY_SECONDS, result.retryAfterSeconds)) * 1000;
