@@ -29,6 +29,11 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
      */
     learned: Schema.optionalKey(Schema.Literal(true)),
     /**
+     * `false` when the addresses the server reports must not become learned
+     * routes, e.g. a hosted environment only reachable through its gateway.
+     */
+    learnRoutes: Schema.optionalKey(Schema.Literal(false)),
+    /**
      * "t3-connect" when the route authenticates with the environment's T3
      * Connect credential instead of a stored bearer token.
      */

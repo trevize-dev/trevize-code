@@ -280,6 +280,8 @@ describe("connectTrevizeEnvironment", () => {
           host: "https://t3-env_1.gw.example.test",
           pairingCode: "pairing-token",
           label: "Checkout revamp",
+          // Only the gateway reaches the sandbox, never its container addresses.
+          learnRoutes: false,
         },
       ]);
     }),

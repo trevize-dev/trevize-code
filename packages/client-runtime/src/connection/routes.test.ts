@@ -194,6 +194,50 @@ describe("learned routes", () => {
     expect(credentialConnectionId(connectionRouteId(learned.target))).toBe("lan");
   });
 
+  it("learns nothing for a route that opts out, and drops routes learned before", () => {
+    const gateway = direct("gateway", "https://t3-env.gw.example.test/");
+    const optedOut: ConnectionRoute = {
+      ...gateway,
+      profile: Option.some(
+        new BearerConnectionProfile({
+          connectionId: "gateway",
+          environmentId: ENVIRONMENT_ID,
+          label: "Desk",
+          httpBaseUrl: "https://t3-env.gw.example.test/",
+          wsBaseUrl: "wss://t3-env.gw.example.test/",
+          learnRoutes: false,
+        }),
+      ),
+    };
+    const entry: ConnectionCatalogEntry = {
+      ...relayOnly,
+      target: optedOut.target,
+      profile: optedOut.profile,
+    };
+    const reported = [{ httpBaseUrl: "http://172.17.0.2:3773/" }];
+    expect(
+      mergeLearnedRoutes({ entry, activeRoute: optedOut, reported, allowInsecure: true }),
+    ).toBeNull();
+
+    // A container address learned before the route opted out is dropped.
+    const learned = mergeLearnedRoutes({
+      entry: { ...entry, profile: gateway.profile },
+      activeRoute: gateway,
+      reported,
+      allowInsecure: true,
+    })!;
+    expect(learned).toHaveLength(2);
+    const stale = entryWithRoutes(entry, [
+      optedOut,
+      ...learned.filter((route) => connectionRouteId(route.target) !== "gateway"),
+    ]);
+    expect(
+      ids(
+        mergeLearnedRoutes({ entry: stale, activeRoute: optedOut, reported, allowInsecure: true }),
+      ),
+    ).toEqual(["gateway"]);
+  });
+
   it("skips plain HTTP from an HTTPS page and never learns loopback", () => {
     expect(
       mergeLearnedRoutes({

@@ -60,6 +60,9 @@ export const connectTrevizeEnvironment = Effect.fn("clientRuntime.trevize.connec
       host: ready.httpBaseUrl,
       pairingCode: ready.pairingToken,
       ...(label ? { label } : {}),
+      // The sandbox reports its container addresses, which only the gateway
+      // can reach; learning them would add a dead "LAN" route.
+      learnRoutes: false,
     });
   },
 );
