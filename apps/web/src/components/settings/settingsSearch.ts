@@ -905,7 +905,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "trevize-cloud",
     title: "Trevize Cloud",
     to: "/settings/connections",
-    searchTerms: ["trevize cloud sandbox connect environment api key workspace"],
+    searchTerms: [
+      "trevize cloud sandbox connect environment api key workspace automatic sync sleeping wake",
+    ],
   },
   {
     id: "load-balancing",

@@ -602,6 +602,7 @@ import {
   supportsServerUpdateThreadContinuation,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
+import { useWakeSleepingTrevizeEnvironment } from "../trevize/TrevizeWake";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   recallableComposerPrompt,
@@ -2669,6 +2670,11 @@ export default function ChatView(props: ChatViewProps) {
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
+  // Opening a thread of a stopped Trevize Cloud environment wakes it.
+  useWakeSleepingTrevizeEnvironment(
+    activeEnvironment?.environmentId ?? null,
+    activeEnvironmentConnectionPhase === "connected",
+  );
   const activeEnvironmentUnavailable =
     activeEnvironment !== null && activeEnvironmentConnectionPhase !== "connected";
   const activeReconnectingEnvironmentId =

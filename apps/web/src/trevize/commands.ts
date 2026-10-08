@@ -5,24 +5,58 @@ import {
   connectTrevizeEnvironment,
   loadTrevizeApiKey,
   saveTrevizeApiKey,
+  TrevizeSync,
 } from "@t3tools/client-runtime/trevize";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
-/** Non-secret Trevize settings, kept per client in local storage. The API key is not here. */
-export const TrevizeClientSettings = Schema.Struct({
-  baseUrl: Schema.String,
-  workspaceId: Schema.NullOr(Schema.String),
+import { updateStoredTrevizeSettings } from "./settingsStore";
+
+export {
+  TREVIZE_SETTINGS_STORAGE_KEY,
+  defaultTrevizeBaseUrl,
+  defaultTrevizeSettings,
+} from "./settingsStore";
+export const TrevizeClientSettings = TrevizeSync.TrevizeClientSettings;
+export type TrevizeClientSettings = TrevizeSync.TrevizeClientSettings;
+
+const requestSync = TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.syncNow));
+
+const syncStateAtom = connectionAtomRuntime.atom(
+  Stream.unwrap(
+    TrevizeSync.TrevizeCloudSync.pipe(Effect.map((sync) => SubscriptionRef.changes(sync.state))),
+  ),
+  { initialValue: TrevizeSync.EMPTY_TREVIZE_CLOUD_SYNC_STATE },
+);
+/** What the Trevize Cloud sync last saw, including which saved environments sleep. */
+export const syncStateValueAtom = Atom.make((get) =>
+  Option.getOrElse(
+    AsyncResult.value(get(syncStateAtom)),
+    () => TrevizeSync.EMPTY_TREVIZE_CLOUD_SYNC_STATE,
+  ),
+).pipe(Atom.withLabel("trevize-cloud-sync-state"));
+
+export const syncNow = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:sync-now",
+  execute: (_input: void) => requestSync,
 });
-export type TrevizeClientSettings = typeof TrevizeClientSettings.Type;
 
-export const TREVIZE_SETTINGS_STORAGE_KEY = "t3code:trevize:v1";
-
-export function defaultTrevizeBaseUrl(): string {
-  return import.meta.env.VITE_TREVIZE_API_URL?.trim() || TrevizeApi.DEFAULT_TREVIZE_API_URL;
-}
+/** Wakes a sleeping Trevize environment and reconnects it. */
+export const wakeEnvironment = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:wake-environment",
+  concurrency: {
+    mode: "singleFlight",
+    key: (environmentId: EnvironmentId) => environmentId,
+  },
+  execute: (environmentId: EnvironmentId) =>
+    TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.wake(environmentId))),
+});
 
 export const loadApiKey = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:load-api-key",
@@ -33,12 +67,21 @@ export const loadApiKey = createRuntimeCommand(connectionAtomRuntime, {
 export const signIn = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:sign-in",
   execute: (config: TrevizeApi.TrevizeApiConfig) =>
-    TrevizeApi.listWorkspaces(config).pipe(Effect.tap(() => saveTrevizeApiKey(config.apiKey))),
+    TrevizeApi.listWorkspaces(config).pipe(
+      Effect.tap(() => saveTrevizeApiKey(config.apiKey)),
+      // The first sync must already use the URL just signed in to.
+      Effect.tap(() =>
+        Effect.sync(() =>
+          updateStoredTrevizeSettings((current) => ({ ...current, baseUrl: config.baseUrl })),
+        ),
+      ),
+      Effect.tap(() => requestSync),
+    ),
 });
 
 export const signOut = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:sign-out",
-  execute: (_input: void) => clearTrevizeApiKey(),
+  execute: (_input: void) => clearTrevizeApiKey().pipe(Effect.tap(() => requestSync)),
 });
 
 export const listWorkspaces = createRuntimeCommand(connectionAtomRuntime, {
