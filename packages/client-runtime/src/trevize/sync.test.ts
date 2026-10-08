@@ -195,6 +195,7 @@ const makeHarness = Effect.fn(function* (input: {
   readonly environments: ReadonlyArray<TrevizeEnvironment>;
   readonly managedOrigins: ReadonlyArray<string>;
   readonly connection?: SupervisorConnectionState;
+  readonly threads?: ReadonlyArray<unknown>;
 }) {
   const requests: Array<string> = [];
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
@@ -255,6 +256,9 @@ const makeHarness = Effect.fn(function* (input: {
     }
     if (/^\/api\/v1\/t3\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
+    }
+    if (url.pathname === "/api/v1/t3/threads" && input.threads !== undefined) {
+      return Promise.resolve(Response.json({ threads: input.threads }));
     }
     const connect = /^\/api\/v1\/t3\/environments\/([^/]+)\/connect$/.exec(url.pathname);
     if (connect?.[1] !== undefined) {
@@ -436,6 +440,56 @@ describe("TrevizeCloudSync", () => {
 
       yield* awaitState((state) => state.lastSyncedAt !== null).pipe(Effect.provide(harness.layer));
       expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_a")]);
+    }),
+  );
+
+  it.effect("loads my tasks and opens one by connecting its environment", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [trevizeEnvironment("env_a", "stopped")],
+        managedOrigins: [],
+        threads: [
+          {
+            id: "thr_1",
+            environmentId: "env_a",
+            t3ThreadId: "t3-thread-1",
+            sourceKind: "linear",
+            createdAt: "2026-10-01T00:00:00.000Z",
+          },
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        const synced = yield* awaitState((state) => state.lastSyncedAt !== null);
+        const task = Option.getOrThrow(synced).myTasks[0];
+        expect(task?.id).toBe("thr_1");
+        expect(harness.requests).toContain("GET /api/v1/t3/threads?workspaceId=ws_1&assignee=me");
+        if (task === undefined) return;
+
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const route = yield* sync.openTask(task);
+        // Opening wakes and pairs the unsaved environment, then routes by the T3 id.
+        expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_a")]);
+        expect(route).toEqual({ environmentId: "t3-paired-1", threadId: "t3-thread-1" });
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("keeps syncing environments when Trevize cannot list tasks", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [trevizeEnvironment("env_a", "running")],
+        managedOrigins: [],
+      });
+
+      const synced = yield* awaitState((state) => state.lastSyncedAt !== null).pipe(
+        Effect.provide(harness.layer),
+      );
+      expect(Option.map(synced, (state) => [state.error, state.myTasks])).toEqual(
+        Option.some([null, []]),
+      );
     }),
   );
 });

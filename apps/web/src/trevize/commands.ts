@@ -134,3 +134,14 @@ export const connectEnvironment = createRuntimeCommand(connectionAtomRuntime, {
   },
   execute: (input) => connectTrevizeEnvironment(input),
 });
+
+/** Makes a "My tasks" thread openable (waking or connecting its environment) and returns its route. */
+export const openTask = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:open-task",
+  concurrency: {
+    mode: "singleFlight",
+    key: (task: TrevizeApi.TrevizeThread) => task.id,
+  },
+  execute: (task) =>
+    TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.openTask(task))),
+});

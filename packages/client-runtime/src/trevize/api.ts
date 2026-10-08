@@ -60,6 +60,33 @@ export const TrevizeEnvironment = Schema.Struct({
 });
 export type TrevizeEnvironment = typeof TrevizeEnvironment.Type;
 
+/**
+ * A thread Trevize launched in one of its environments (`GET /t3/threads`).
+ * `environmentId` is the Trevize environment id, not the T3 server's.
+ * Decoded tolerantly: kinds and statuses are open strings, and the live
+ * thread status fields are optional until Trevize reports them.
+ */
+export const TrevizeThread = Schema.Struct({
+  id: Schema.String,
+  environmentId: Schema.String,
+  environmentTitle: Schema.optional(Schema.NullOr(Schema.String)),
+  environmentStatus: Schema.optional(Schema.NullOr(Schema.String)),
+  workspaceId: Schema.optional(Schema.String),
+  t3ThreadId: Schema.String,
+  title: Schema.optional(Schema.NullOr(Schema.String)),
+  sourceKind: Schema.String,
+  sourceRef: Schema.optional(Schema.NullOr(Schema.String)),
+  sourceUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  branch: Schema.optional(Schema.NullOr(Schema.String)),
+  deepLinkUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  createdAt: Schema.String,
+  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  status: Schema.optional(Schema.NullOr(Schema.String)),
+  waiting: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  pendingRuntimeRequest: Schema.optional(Schema.Unknown),
+});
+export type TrevizeThread = typeof TrevizeThread.Type;
+
 const TrevizeConnectReady = Schema.Struct({
   status: Schema.Literal("ready"),
   httpBaseUrl: Schema.String,
@@ -108,6 +135,9 @@ const RepositoriesResponse = Schema.Struct({
 });
 const EnvironmentsResponse = Schema.Struct({
   environments: Schema.Array(TrevizeEnvironment),
+});
+const ThreadsResponse = Schema.Struct({
+  threads: Schema.Array(TrevizeThread),
 });
 /** Both the public-API auth middleware (`{ error: { message } }`) and oRPC (`{ message }`) shapes. */
 const ErrorBody = Schema.Struct({
@@ -228,6 +258,22 @@ export const listEnvironments = Effect.fn("clientRuntime.trevize.listEnvironment
     EnvironmentsResponse,
   );
   return body.environments;
+});
+
+/** Threads assigned to the API key's user in one workspace, newest first. */
+export const listMyThreads = Effect.fn("clientRuntime.trevize.listMyThreads")(function* (
+  config: TrevizeApiConfig,
+  workspaceId: string,
+) {
+  const body = yield* execute(
+    config,
+    HttpClientRequest.get(apiUrl(config, "/t3/threads")).pipe(
+      HttpClientRequest.setUrlParam("workspaceId", workspaceId),
+      HttpClientRequest.setUrlParam("assignee", "me"),
+    ),
+    ThreadsResponse,
+  );
+  return body.threads;
 });
 
 export const createEnvironment = Effect.fn("clientRuntime.trevize.createEnvironment")(function* (
