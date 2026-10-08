@@ -168,6 +168,19 @@ describe("connection onboarding", () => {
     }),
   );
 
+  it.effect("saves a caller-provided label instead of the reported one", () =>
+    Effect.gen(function* () {
+      const registration = yield* preparePairingRegistration({
+        host: "remote.example.test",
+        pairingCode: "pairing-token",
+        label: "Checkout revamp",
+      }).pipe(Effect.provide(Layer.mergeAll(layerClientPresentation, layerPairingHttp([]))));
+
+      expect(registration.target.label).toBe("Checkout revamp");
+      expect(registration.profile.label).toBe("Checkout revamp");
+    }),
+  );
+
   it.effect("rejects an incompatible server without consuming the pairing credential", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];

@@ -111,6 +111,10 @@
       "types": "./src/t3ToolSummary.ts",
       "default": "./src/t3ToolSummary.ts"
     },
+    "./trevize": {
+      "types": "./src/trevize/index.ts",
+      "default": "./src/trevize/index.ts"
+    },
     "./relay": {
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"
