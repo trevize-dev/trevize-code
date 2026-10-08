@@ -23,6 +23,7 @@ interface Call {
   readonly url: string;
   readonly authorization: string | null;
   readonly body: string | null;
+  readonly headerNames: ReadonlyArray<string>;
 }
 
 function layerTrevizeHttp(calls: Array<Call>, responses: Array<() => Response>) {
@@ -32,6 +33,7 @@ function layerTrevizeHttp(calls: Array<Call>, responses: Array<() => Response>) 
       method: init.method ?? "GET",
       url: String(input),
       authorization: headers.get("authorization"),
+      headerNames: [...headers.keys()],
       body:
         init.body instanceof Uint8Array
           ? new TextDecoder().decode(init.body)
@@ -70,7 +72,7 @@ const readyJson = {
 };
 
 describe("Trevize API client", () => {
-  it.effect("sends the API key as a bearer token and decodes environments", () =>
+  it.effect("sends the API key as a bearer token, no trace headers, and decodes environments", () =>
     Effect.gen(function* () {
       const calls: Array<Call> = [];
       const environments = yield* TrevizeApi.listEnvironments(config, "ws 1").pipe(
@@ -88,6 +90,8 @@ describe("Trevize API client", () => {
           url: "https://trevize.example.test/api/v1/t3/environments?workspaceId=ws+1",
           authorization: "Bearer tvz_test",
           body: null,
+          // No `traceparent`/`b3`: Trevize's CORS preflight rejects them.
+          headerNames: ["accept", "authorization"],
         },
       ]);
     }),

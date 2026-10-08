@@ -153,6 +153,9 @@ const execute = <S extends Schema.Constraint>(
         ),
       )
       .pipe(
+        // Trevize's CORS policy does not allow `traceparent`/`b3`, so a
+        // propagated trace header would fail the browser preflight.
+        Effect.provideService(HttpClient.TracerPropagationEnabled, false),
         Effect.mapError(
           (cause) =>
             new TrevizeApiError({
