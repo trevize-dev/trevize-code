@@ -77,7 +77,11 @@ describe("deriveMyTaskStatus", () => {
     expect(deriveMyTaskStatus(task({ pendingRuntimeRequest: { kind: "approval" } }))).toBe(
       "waiting",
     );
+    expect(deriveMyTaskStatus(task({ pendingRuntimeRequest: true }))).toBe("waiting");
     expect(deriveMyTaskStatus(task({ pendingRuntimeRequest: null, status: "running" }))).toBe(
+      "running",
+    );
+    expect(deriveMyTaskStatus(task({ pendingRuntimeRequest: false, status: "running" }))).toBe(
       "running",
     );
   });

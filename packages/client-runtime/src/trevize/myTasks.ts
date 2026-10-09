@@ -43,8 +43,9 @@ const THREAD_STATUSES: Record<string, MyTaskStatus> = {
  */
 export function deriveMyTaskStatus(task: TrevizeThread): MyTaskStatus | null {
   const threadStatus = task.status ? (THREAD_STATUSES[task.status.toLowerCase()] ?? null) : null;
-  const pendingRequest =
-    task.pendingRuntimeRequest !== undefined && task.pendingRuntimeRequest !== null;
+  // A pending request is an object (or `true`); `false` means there is none.
+  const request = task.pendingRuntimeRequest;
+  const pendingRequest = request === true || (typeof request === "object" && request !== null);
   if (task.waiting === true || pendingRequest || threadStatus === "waiting") return "waiting";
   if (threadStatus === "failed" || threadStatus === "done") return threadStatus;
   switch (task.environmentStatus) {
