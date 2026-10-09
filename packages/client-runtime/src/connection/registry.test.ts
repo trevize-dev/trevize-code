@@ -2067,6 +2067,46 @@ describe("EnvironmentRegistry routes", () => {
     }),
   );
 
+  it.effect("stops learning routes for an environment and drops the ones it learned", () =>
+    Effect.gen(function* () {
+      const learnedId = `learned:${BEARER_TARGET.environmentId}:http://172.17.0.2:3773@${BEARER_TARGET.connectionId}`;
+      const learned = new BearerConnectionTarget({ ...BEARER_TARGET, connectionId: learnedId });
+      const learnedProfile = new BearerConnectionProfile({
+        connectionId: learnedId,
+        environmentId: BEARER_TARGET.environmentId,
+        label: BEARER_TARGET.label,
+        httpBaseUrl: "http://172.17.0.2:3773/",
+        wsBaseUrl: "ws://172.17.0.2:3773/",
+        learned: true,
+      });
+      const harness = yield* makeHarness(
+        [learned, BEARER_TARGET],
+        [learnedProfile, BEARER_PROFILE],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.stopLearningRoutes(BEARER_TARGET.environmentId);
+        yield* registry.stopLearningRoutes(BEARER_TARGET.environmentId);
+
+        const entry = (yield* SubscriptionRef.get(registry.entries)).get(
+          BEARER_TARGET.environmentId,
+        );
+        expect(entry?.target).toEqual(BEARER_TARGET);
+        expect(entry?.alternateRoutes ?? []).toEqual([]);
+        expect(Option.getOrNull(entry?.profile ?? Option.none())).toMatchObject({
+          learnRoutes: false,
+        });
+        expect(
+          routesOf(yield* Ref.get(harness.storedTargets), BEARER_TARGET.environmentId),
+        ).toEqual([BEARER_TARGET]);
+        expect(
+          (yield* Ref.get(harness.storedProfiles)).get(BEARER_TARGET.connectionId),
+        ).toMatchObject({ learnRoutes: false });
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("drops a learned route whose profile was not saved instead of duplicating it", () =>
     Effect.gen(function* () {
       const learnedId = `learned:${LAN_TARGET.environmentId}:100.64.0.9:3773@${LAN_TARGET.connectionId}`;

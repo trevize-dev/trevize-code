@@ -14,6 +14,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
+  BearerConnectionProfile,
   type ConnectionCatalogEntry,
   type ConnectionCredential,
   type ConnectionProfile,
@@ -159,6 +160,14 @@ export class EnvironmentRegistry extends Context.Service<
       environmentId: EnvironmentId,
       paused: boolean,
     ) => Effect.Effect<void>;
+    /**
+     * Opts a saved environment's direct routes out of route learning and drops
+     * the routes it learned, e.g. for a hosted environment only reachable
+     * through its gateway. Does nothing when it is already opted out.
+     */
+    readonly stopLearningRoutes: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<void, Persistence.ConnectionPersistenceError | ConnectionAttemptError>;
     /**
      * Switches a saved environment on or off. Off drops the socket, stops the
      * retry ladder, and persists so the next launch stays off. Registration,
@@ -1042,6 +1051,33 @@ export const make = Effect.gen(function* () {
       return next;
     });
   });
+  const stopLearningRoutes = Effect.fn("EnvironmentRegistry.stopLearningRoutes")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) return;
+        const entry = (yield* SubscriptionRef.get(entries)).get(environmentId);
+        if (entry === undefined) return;
+        const routes = connectionRoutes(entry);
+        const optedOut: Array<BearerConnectionProfile> = [];
+        const next = routes.flatMap((route): ReadonlyArray<ConnectionRoute> => {
+          if (isLearned(route)) return [];
+          const profile = Option.getOrNull(route.profile);
+          if (profile?._tag !== "BearerConnectionProfile" || profile.learnRoutes === false) {
+            return [route];
+          }
+          const updated = new BearerConnectionProfile({ ...profile, learnRoutes: false });
+          optedOut.push(updated);
+          return [{ ...route, profile: Option.some(updated) }];
+        });
+        if (next.length === 0 || (optedOut.length === 0 && next.length === routes.length)) return;
+        for (const profile of optedOut) yield* profiles.put(profile);
+        yield* replaceRoutesLocked(entry, next);
+      }),
+    );
+  });
   const setEnabled = Effect.fn("EnvironmentRegistry.setEnabled")(function* (
     environmentId: EnvironmentId,
     enabled: boolean,
@@ -1190,6 +1226,7 @@ export const make = Effect.gen(function* () {
     removeRelayEnvironments,
     retryNow,
     setRetriesPaused,
+    stopLearningRoutes,
     setEnabled,
     setCompatibility,
     state,

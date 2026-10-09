@@ -176,6 +176,7 @@ interface Harness {
   readonly removed: Array<EnvironmentId>;
   readonly retried: Array<EnvironmentId>;
   readonly paused: Set<EnvironmentId>;
+  readonly optedOut: Array<EnvironmentId>;
   readonly settings: Ref.Ref<TrevizeSync.TrevizeClientSettings>;
 }
 
@@ -200,6 +201,7 @@ const makeHarness = Effect.fn(function* (input: {
   const removed: Array<EnvironmentId> = [];
   const retried: Array<EnvironmentId> = [];
   const paused = new Set<EnvironmentId>();
+  const optedOut: Array<EnvironmentId> = [];
   const entries = yield* SubscriptionRef.make<ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>>(
     new Map(input.saved.map((entry) => [entry.target.environmentId, entry])),
   );
@@ -230,6 +232,7 @@ const makeHarness = Effect.fn(function* (input: {
     retryNow: (environmentId) => Effect.sync(() => void retried.push(environmentId)),
     setRetriesPaused: (environmentId, isPaused) =>
       Effect.sync(() => void (isPaused ? paused.add(environmentId) : paused.delete(environmentId))),
+    stopLearningRoutes: (environmentId) => Effect.sync(() => void optedOut.push(environmentId)),
     setEnabled: () => Effect.die("unused"),
     setCompatibility: () => Effect.die("unused"),
     state: () => Effect.succeed(input.connection ?? AVAILABLE_CONNECTION_STATE),
@@ -302,7 +305,16 @@ const makeHarness = Effect.fn(function* (input: {
       ),
     ),
   );
-  const harness: Harness = { layer, requests, pairings, removed, retried, paused, settings };
+  const harness: Harness = {
+    layer,
+    requests,
+    pairings,
+    removed,
+    retried,
+    paused,
+    optedOut,
+    settings,
+  };
   return harness;
 });
 
@@ -332,6 +344,8 @@ describe("TrevizeCloudSync", () => {
         );
         expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_new")]);
         expect(harness.removed).toEqual([T3_B]);
+        // Saved Trevize environments never keep learned container addresses.
+        expect(harness.optedOut).toEqual([T3_A]);
         expect((yield* Ref.get(harness.settings)).managedOrigins).toEqual([
           origin("env_a"),
           origin("env_new"),

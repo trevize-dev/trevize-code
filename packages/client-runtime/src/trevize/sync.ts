@@ -333,6 +333,22 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       }
     }
 
+    // Environments paired before Trevize pairings opted out of route learning
+    // may hold learned container addresses that bypass the gateway.
+    for (const action of plan.actions) {
+      if ((action._tag !== "MarkSleeping" && action._tag !== "Noop") || !action.environmentId) {
+        continue;
+      }
+      yield* registry.stopLearningRoutes(action.environmentId).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Could not drop learned routes of a Trevize environment.", {
+            environmentId: action.environmentId,
+            error,
+          }),
+        ),
+      );
+    }
+
     // Woken elsewhere (another device, Trevize itself): connect again.
     yield* resumeRetries([...wasSleeping.keys()].filter((id) => !sleeping.has(id)));
 
