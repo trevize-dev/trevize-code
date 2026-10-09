@@ -57,6 +57,8 @@ export const TrevizeEnvironment = Schema.Struct({
   updatedAt: Schema.String,
   lastActivityAt: Schema.optional(Schema.NullOr(Schema.String)),
   error: Schema.optional(Schema.NullOr(Schema.String)),
+  /** The space this environment runs for; absent on servers without spaces. */
+  spaceId: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type TrevizeEnvironment = typeof TrevizeEnvironment.Type;
 
@@ -84,8 +86,49 @@ export const TrevizeThread = Schema.Struct({
   status: Schema.optional(Schema.NullOr(Schema.String)),
   waiting: Schema.optional(Schema.NullOr(Schema.Boolean)),
   pendingRuntimeRequest: Schema.optional(Schema.Unknown),
+  archived: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 export type TrevizeThread = typeof TrevizeThread.Type;
+
+/**
+ * A space (`GET /spaces`): an orchestrator chat plus the environments it runs
+ * agents in, all sharing a `/shared` volume. `orchestratorThreadId` is a
+ * Trevize thread id, null until the orchestrator was started once.
+ */
+export const TrevizeSpace = Schema.Struct({
+  id: Schema.String,
+  workspaceId: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  instructions: Schema.optional(Schema.NullOr(Schema.String)),
+  repositoryIds: Schema.Array(Schema.String),
+  orchestratorThreadId: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  archivedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Absent on servers from before the sandbox limit. */
+  maxEnvironments: Schema.optional(Schema.Number),
+});
+export type TrevizeSpace = typeof TrevizeSpace.Type;
+
+const TrevizeOrchestratorStarted = Schema.Struct({
+  threadId: Schema.String,
+  environmentId: Schema.String,
+  deepLinkUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  existing: Schema.optional(Schema.Boolean),
+});
+export type TrevizeOrchestratorStarted = typeof TrevizeOrchestratorStarted.Type;
+
+/** The `409` detail while the space's environment provisions or starts. */
+const TrevizeOrchestratorPending = Schema.Struct({
+  status: Schema.optional(Schema.String),
+  retryAfterSeconds: Schema.optional(Schema.Number),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+});
+const OrchestratorConflictBody = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  data: Schema.optional(TrevizeOrchestratorPending),
+});
 
 const TrevizeConnectReady = Schema.Struct({
   status: Schema.Literal("ready"),
@@ -139,6 +182,9 @@ const EnvironmentsResponse = Schema.Struct({
 const ThreadsResponse = Schema.Struct({
   threads: Schema.Array(TrevizeThread),
 });
+const SpacesResponse = Schema.Struct({
+  spaces: Schema.Array(TrevizeSpace),
+});
 /** Both the public-API auth middleware (`{ error: { message } }`) and oRPC (`{ message }`) shapes. */
 const ErrorBody = Schema.Struct({
   message: Schema.optional(Schema.String),
@@ -179,14 +225,11 @@ const failureFromResponse = (response: HttpClientResponse.HttpClientResponse) =>
     ),
   );
 
-const execute = <S extends Schema.Constraint>(
-  config: TrevizeApiConfig,
-  request: HttpClientRequest.HttpClientRequest,
-  schema: S,
-) =>
+/** Sends an authenticated request; any HTTP status is a success here. */
+const send = (config: TrevizeApiConfig, request: HttpClientRequest.HttpClientRequest) =>
   Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
-    const response = yield* client
+    return yield* client
       .execute(
         request.pipe(
           HttpClientRequest.bearerToken(config.apiKey.trim()),
@@ -205,20 +248,35 @@ const execute = <S extends Schema.Constraint>(
             }),
         ),
       );
+  });
+
+const decodeResponse = <S extends Schema.Constraint>(
+  response: HttpClientResponse.HttpClientResponse,
+  schema: S,
+) =>
+  response.json.pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+    Effect.mapError(
+      (cause) =>
+        new TrevizeApiError({
+          reason: "decode",
+          status: response.status,
+          message: `Unexpected response from Trevize: ${cause.message}`,
+        }),
+    ),
+  );
+
+const execute = <S extends Schema.Constraint>(
+  config: TrevizeApiConfig,
+  request: HttpClientRequest.HttpClientRequest,
+  schema: S,
+) =>
+  Effect.gen(function* () {
+    const response = yield* send(config, request);
     if (response.status < 200 || response.status >= 300) {
       return yield* failureFromResponse(response);
     }
-    return yield* response.json.pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(schema)),
-      Effect.mapError(
-        (cause) =>
-          new TrevizeApiError({
-            reason: "decode",
-            status: response.status,
-            message: `Unexpected response from Trevize: ${cause.message}`,
-          }),
-      ),
-    );
+    return yield* decodeResponse(response, schema);
   });
 
 export const listWorkspaces = Effect.fn("clientRuntime.trevize.listWorkspaces")(function* (
@@ -425,6 +483,160 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
       return yield* new TrevizeApiError({
         reason: "timeout",
         message: "The Trevize environment is still starting. Try again in a minute.",
+      });
+    }
+    yield* Effect.sleep(Duration.millis(delayMs));
+  }
+});
+
+/**
+ * Every thread Trevize launched in one workspace, newest first. Spaces group
+ * them by their environment's `spaceId`.
+ */
+export const listWorkspaceThreads = Effect.fn("clientRuntime.trevize.listWorkspaceThreads")(
+  function* (config: TrevizeApiConfig, workspaceId: string) {
+    const body = yield* execute(
+      config,
+      HttpClientRequest.get(apiUrl(config, "/t3/threads")).pipe(
+        HttpClientRequest.setUrlParam("workspaceId", workspaceId),
+      ),
+      ThreadsResponse,
+    );
+    return body.threads;
+  },
+);
+
+/**
+ * The workspace's spaces, or none when spaces are unavailable to it: Trevize
+ * answers 404 unless the workspace has the `t3` flag, and older servers do
+ * not know the route at all.
+ */
+export const listSpaces = Effect.fn("clientRuntime.trevize.listSpaces")(function* (
+  config: TrevizeApiConfig,
+  workspaceId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.get(apiUrl(config, "/spaces")).pipe(
+      HttpClientRequest.setUrlParam("workspaceId", workspaceId),
+    ),
+    SpacesResponse,
+  ).pipe(
+    Effect.map((body) => body.spaces),
+    Effect.asSome,
+    Effect.catchIf(
+      (error) => error.status === 404,
+      () => Effect.succeedNone,
+    ),
+  );
+});
+
+export interface TrevizeSpaceInput {
+  readonly workspaceId: string;
+  readonly name: string;
+  readonly instructions?: string;
+  /** `owner/repo` slugs or Trevize repository ids. */
+  readonly repositoryIds: ReadonlyArray<string>;
+  /** Most sandboxes the space runs at once, 1–32. */
+  readonly maxEnvironments?: number;
+}
+
+/** Creates a space. Its orchestrator is not started; see `startOrchestratorWhenReady`. */
+export const createSpace = Effect.fn("clientRuntime.trevize.createSpace")(function* (
+  config: TrevizeApiConfig,
+  input: TrevizeSpaceInput,
+) {
+  const instructions = input.instructions?.trim();
+  return yield* execute(
+    config,
+    HttpClientRequest.post(apiUrl(config, "/spaces")).pipe(
+      HttpClientRequest.bodyJsonUnsafe({
+        workspaceId: input.workspaceId,
+        name: input.name.trim(),
+        repositoryIds: input.repositoryIds,
+        ...(instructions ? { instructions } : {}),
+        ...(input.maxEnvironments === undefined ? {} : { maxEnvironments: input.maxEnvironments }),
+      }),
+    ),
+    TrevizeSpace,
+  );
+});
+
+export const archiveSpace = Effect.fn("clientRuntime.trevize.archiveSpace")(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.post(apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}/archive`)),
+    TrevizeSpace,
+  );
+});
+
+export interface TrevizeOrchestratorModel {
+  /** A T3 provider driver kind, e.g. `codex`. */
+  readonly provider: string;
+  readonly model: string;
+}
+
+/** Long enough for a new space's first sandbox to provision and start T3. */
+const DEFAULT_ORCHESTRATOR_MAX_WAIT_MS = 10 * 60_000;
+
+/**
+ * Starts the space's orchestrator thread, or returns the existing one. While
+ * the space's environment provisions Trevize answers 409 with a retry hint;
+ * this polls like `connectWhenReady`. The model only applies to the first
+ * launch.
+ */
+export const startOrchestratorWhenReady = Effect.fn(
+  "clientRuntime.trevize.startOrchestratorWhenReady",
+)(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+  options?: {
+    readonly model?: TrevizeOrchestratorModel | null;
+    readonly maxWaitMs?: number;
+  },
+) {
+  const maxWaitMs = options?.maxWaitMs ?? DEFAULT_ORCHESTRATOR_MAX_WAIT_MS;
+  const model = options?.model;
+  const startedAt = yield* Clock.currentTimeMillis;
+  while (true) {
+    const response = yield* send(
+      config,
+      HttpClientRequest.post(
+        apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}/orchestrator`),
+      ).pipe(
+        HttpClientRequest.bodyJsonUnsafe(
+          model ? { provider: model.provider, model: model.model } : {},
+        ),
+      ),
+    );
+    if (response.status >= 200 && response.status < 300) {
+      return yield* decodeResponse(response, TrevizeOrchestratorStarted);
+    }
+    if (response.status !== 409) {
+      return yield* failureFromResponse(response);
+    }
+    const pending = (yield* decodeResponse(response, OrchestratorConflictBody)).data;
+    if (pending?.status === "failed") {
+      return yield* new TrevizeApiError({
+        reason: "failed",
+        message: pending.error
+          ? `The space's environment failed to start: ${pending.error}`
+          : "The space's environment failed to start. Try again in a minute.",
+      });
+    }
+    const delayMs =
+      Math.min(
+        MAX_RETRY_SECONDS,
+        Math.max(MIN_RETRY_SECONDS, pending?.retryAfterSeconds ?? DEFAULT_WAKE_RETRY_SECONDS),
+      ) * 1000;
+    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
+    if (elapsedMs + delayMs > maxWaitMs) {
+      return yield* new TrevizeApiError({
+        reason: "timeout",
+        message: "The space's environment is still starting. Try again in a minute.",
       });
     }
     yield* Effect.sleep(Duration.millis(delayMs));

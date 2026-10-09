@@ -4,3 +4,4 @@ export { TrevizeApiError } from "./api.ts";
 export * from "./connect.ts";
 export * as TrevizeSync from "./sync.ts";
 export * as TrevizeMyTasks from "./myTasks.ts";
+export * as TrevizeSpaces from "./spaces.ts";

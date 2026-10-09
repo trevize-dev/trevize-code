@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -22,12 +23,20 @@ import * as ConnectionWakeups from "../connection/wakeups.ts";
 import {
   DEFAULT_TREVIZE_API_URL,
   TrevizeApiError,
+  archiveSpace as archiveTrevizeSpace,
+  createSpace as createTrevizeSpace,
   wakeWhenReady,
   listEnvironments,
   listMyThreads,
+  listSpaces,
+  listWorkspaceThreads,
   listWorkspaces,
+  startOrchestratorWhenReady,
   type TrevizeApiConfig,
   type TrevizeEnvironment,
+  type TrevizeOrchestratorModel,
+  type TrevizeSpace,
+  type TrevizeSpaceInput,
   type TrevizeThread,
 } from "./api.ts";
 import {
@@ -37,6 +46,7 @@ import {
   trevizeOrigin,
 } from "./connect.ts";
 import { mergeMyTasks, resolveMyTaskTarget } from "./myTasks.ts";
+import { defaultSpaceWorkspaceId } from "./spaces.ts";
 
 /**
  * Non-secret Trevize settings, kept per client. The API key lives in the
@@ -167,6 +177,16 @@ export interface TrevizeCloudSyncState {
   readonly waking: ReadonlySet<EnvironmentId>;
   /** Threads assigned to the signed-in user across all workspaces ("My tasks"). */
   readonly myTasks: ReadonlyArray<TrevizeThread>;
+  /** Workspaces whose Trevize offers spaces; empty means spaces are unavailable. */
+  readonly spaceWorkspaceIds: ReadonlyArray<string>;
+  /** Live (not archived) spaces of those workspaces. */
+  readonly spaces: ReadonlyArray<TrevizeSpace>;
+  /** Threads of those workspaces that run in a space's environment. */
+  readonly spaceThreads: ReadonlyArray<TrevizeThread>;
+  /** Spaces whose orchestrator is being started from this device. */
+  readonly startingSpaces: ReadonlySet<string>;
+  /** Why the last orchestrator start of a space failed, until it is retried. */
+  readonly spaceStartErrors: ReadonlyMap<string, string>;
 }
 
 export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
@@ -178,7 +198,19 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   sleeping: new Map(),
   waking: new Set(),
   myTasks: [],
+  spaceWorkspaceIds: [],
+  spaces: [],
+  spaceThreads: [],
+  startingSpaces: new Set(),
+  spaceStartErrors: new Map(),
 };
+
+/** What a new space needs; the workspace defaults to the one picked in settings. */
+export interface CreateSpaceInput extends Omit<TrevizeSpaceInput, "workspaceId"> {
+  readonly workspaceId?: string;
+  /** The orchestrator's model, applied when it first starts. */
+  readonly orchestratorModel?: TrevizeOrchestratorModel | null;
+}
 
 export class TrevizeCloudSync extends Context.Service<
   TrevizeCloudSync,
@@ -203,12 +235,53 @@ export class TrevizeCloudSync extends Context.Service<
       { readonly environmentId: EnvironmentId; readonly threadId: ThreadId },
       TrevizeApiError
     >;
+    /**
+     * Creates a space and starts its orchestrator in the background (see
+     * `startOrchestrator`). Returns once the space exists.
+     */
+    readonly createSpace: (input: CreateSpaceInput) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
+    /**
+     * Starts a space's orchestrator in the background, polling while its
+     * environment provisions. Progress shows in `startingSpaces` and
+     * `spaceStartErrors`; a start already in flight is not repeated.
+     */
+    readonly startOrchestrator: (
+      spaceId: string,
+      model?: TrevizeOrchestratorModel | null,
+    ) => Effect.Effect<void>;
+    readonly archiveSpace: (spaceId: string) => Effect.Effect<void, TrevizeApiError>;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
 export const SYNC_INTERVAL = Duration.seconds(30);
 /** Background pairing only targets running environments, so this is short. */
 const PAIR_MAX_WAIT_MS = 30_000;
+
+interface SpaceListing {
+  readonly workspaceId: string;
+  readonly spaces: ReadonlyArray<TrevizeSpace>;
+  readonly threads: ReadonlyArray<TrevizeThread>;
+}
+
+type MergedSpaces = Pick<TrevizeCloudSyncState, "spaceWorkspaceIds" | "spaces" | "spaceThreads">;
+
+/** Keeps live spaces and the threads that run in a space's environment. */
+function mergeSpaceListings(
+  listings: ReadonlyArray<Option.Option<SpaceListing>>,
+  environments: ReadonlyArray<TrevizeEnvironment>,
+): MergedSpaces {
+  const available = listings.flatMap((listing) => (Option.isSome(listing) ? [listing.value] : []));
+  const spaceEnvironments = new Set(
+    environments.filter((environment) => environment.spaceId).map((environment) => environment.id),
+  );
+  return {
+    spaceWorkspaceIds: available.map((listing) => listing.workspaceId),
+    spaces: available.flatMap((listing) => listing.spaces.filter((space) => !space.archivedAt)),
+    spaceThreads: available.flatMap((listing) =>
+      listing.threads.filter((thread) => spaceEnvironments.has(thread.environmentId)),
+    ),
+  };
+}
 
 interface LoadedConfig {
   readonly config: TrevizeApiConfig;
@@ -235,6 +308,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     | HttpClient.HttpClient
   >();
   const state = yield* SubscriptionRef.make(EMPTY_TREVIZE_CLOUD_SYNC_STATE);
+  const serviceScope = yield* Scope.Scope;
   const requests = yield* Queue.sliding<void>(1);
   const waking = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
 
@@ -297,6 +371,36 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       Effect.catch((error) =>
         Effect.logWarning("Could not list Trevize tasks.", { error }).pipe(
           Effect.as(Option.none<ReadonlyArray<TrevizeThread>>()),
+        ),
+      ),
+    );
+
+    // Spaces are best effort like tasks. A 404 means the workspace has no
+    // spaces; its threads are only listed when it does.
+    const spaceListing = yield* Effect.forEach(
+      workspaces,
+      (workspace) =>
+        listSpaces(config, workspace.id).pipe(
+          Effect.flatMap((spaces) =>
+            Option.isNone(spaces)
+              ? Effect.succeed(Option.none<SpaceListing>())
+              : listWorkspaceThreads(config, workspace.id).pipe(
+                  Effect.map((threads) =>
+                    Option.some<SpaceListing>({
+                      workspaceId: workspace.id,
+                      spaces: spaces.value,
+                      threads,
+                    }),
+                  ),
+                ),
+          ),
+        ),
+      { concurrency: 4 },
+    ).pipe(
+      Effect.map((listings) => Option.some(mergeSpaceListings(listings, environments))),
+      Effect.catch((error) =>
+        Effect.logWarning("Could not list Trevize spaces.", { error }).pipe(
+          Effect.as(Option.none<MergedSpaces>()),
         ),
       ),
     );
@@ -397,6 +501,11 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       environments,
       sleeping,
       myTasks: Option.getOrElse(myTasks, () => current.myTasks),
+      ...Option.getOrElse(spaceListing, () => ({
+        spaceWorkspaceIds: current.spaceWorkspaceIds,
+        spaces: current.spaces,
+        spaceThreads: current.spaceThreads,
+      })),
     }));
   }).pipe(
     Effect.catch((error) =>
@@ -501,6 +610,90 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     }
   });
 
+  const requireConfig = (action: string) =>
+    loadConfig.pipe(
+      Effect.flatMap(Effect.fromOption),
+      Effect.mapError(
+        () =>
+          new TrevizeApiError({
+            reason: "unauthorized",
+            message: `Sign in to Trevize Cloud to ${action}.`,
+          }),
+      ),
+    );
+
+  const setStarting = (spaceId: string, starting: boolean, error: string | null) =>
+    SubscriptionRef.update(state, (current) => {
+      const startingSpaces = new Set(current.startingSpaces);
+      if (starting) startingSpaces.add(spaceId);
+      else startingSpaces.delete(spaceId);
+      const spaceStartErrors = new Map(current.spaceStartErrors);
+      if (error === null) spaceStartErrors.delete(spaceId);
+      else spaceStartErrors.set(spaceId, error);
+      return { ...current, startingSpaces, spaceStartErrors };
+    });
+
+  const startOrchestrator = Effect.fn("TrevizeCloudSync.startOrchestrator")(function* (
+    spaceId: string,
+    model?: TrevizeOrchestratorModel | null,
+  ) {
+    if ((yield* SubscriptionRef.get(state)).startingSpaces.has(spaceId)) return;
+    yield* setStarting(spaceId, true, null);
+    yield* Effect.gen(function* () {
+      const { config } = yield* requireConfig("start the orchestrator");
+      const started = yield* startOrchestratorWhenReady(config, spaceId, { model: model ?? null });
+      yield* SubscriptionRef.update(state, (current) => ({
+        ...current,
+        spaces: current.spaces.map((space) =>
+          space.id === spaceId ? { ...space, orchestratorThreadId: started.threadId } : space,
+        ),
+      }));
+      // The next listing carries the orchestrator thread and pairs its environment.
+      yield* syncNow;
+      yield* setStarting(spaceId, false, null);
+    }).pipe(
+      Effect.provideContext(context),
+      Effect.catch((error) => setStarting(spaceId, false, error.message)),
+      Effect.onInterrupt(() => setStarting(spaceId, false, null)),
+      // Outlives the caller: the start keeps polling after its view is gone.
+      Effect.forkIn(serviceScope),
+    );
+  });
+
+  const createSpace = Effect.fn("TrevizeCloudSync.createSpace")(function* (
+    input: CreateSpaceInput,
+  ) {
+    const { config, settings } = yield* requireConfig("create a space");
+    const current = yield* SubscriptionRef.get(state);
+    const workspaceId =
+      input.workspaceId ?? defaultSpaceWorkspaceId(settings.workspaceId, current.spaceWorkspaceIds);
+    if (workspaceId === null) {
+      return yield* new TrevizeApiError({
+        reason: "request",
+        message: "None of your Trevize workspaces has spaces enabled.",
+      });
+    }
+    const space = yield* createTrevizeSpace(config, { ...input, workspaceId }).pipe(
+      Effect.provideContext(context),
+    );
+    yield* SubscriptionRef.update(state, (latest) => ({
+      ...latest,
+      spaces: [space, ...latest.spaces.filter((candidate) => candidate.id !== space.id)],
+    }));
+    yield* startOrchestrator(space.id, input.orchestratorModel ?? null);
+    return space;
+  });
+
+  const archiveSpace = Effect.fn("TrevizeCloudSync.archiveSpace")(function* (spaceId: string) {
+    const { config } = yield* requireConfig("archive this space");
+    yield* archiveTrevizeSpace(config, spaceId).pipe(Effect.provideContext(context));
+    yield* SubscriptionRef.update(state, (current) => ({
+      ...current,
+      spaces: current.spaces.filter((space) => space.id !== spaceId),
+    }));
+    yield* syncNow;
+  });
+
   // The one sync loop: runs at start, then on request or every interval.
   yield* Effect.gen(function* () {
     while (true) {
@@ -514,7 +707,15 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     Effect.forkScoped,
   );
 
-  return TrevizeCloudSync.of({ state, syncNow, wake, openTask });
+  return TrevizeCloudSync.of({
+    state,
+    syncNow,
+    wake,
+    openTask,
+    createSpace,
+    startOrchestrator,
+    archiveSpace,
+  });
 });
 
 export const layer = Layer.effect(TrevizeCloudSync, make());
