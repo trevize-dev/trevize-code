@@ -30,6 +30,7 @@ const RIGHT_PANEL_KINDS = [
   "terminal",
   "pull-request",
   "pull-requests",
+  "space",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -85,7 +86,9 @@ export type RightPanelSurface =
       url?: string;
     }
   /** The thread's linked pull requests, one singleton tab beside any number of `pull-request` tabs. */
-  | { id: "pull-requests"; kind: "pull-requests" };
+  | { id: "pull-requests"; kind: "pull-requests" }
+  /** A Trevize space's orchestrator tasks and `/shared` files, beside any of the space's threads. */
+  | { id: "space"; kind: "space"; spaceId: string };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
@@ -137,8 +140,10 @@ interface RightPanelStoreState {
   ) => boolean;
   open: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "space">,
   ) => void;
+  /** Shows a space's panel beside one of its threads. `automatic` does not count as a user choice. */
+  openSpace: (ref: ScopedThreadRef, spaceId: string, automatic?: boolean) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
@@ -180,7 +185,7 @@ interface RightPanelStoreState {
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "space">,
   ) => void;
   setThreadPanelOpen: (
     ref: ScopedThreadRef,
@@ -203,7 +208,7 @@ const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "space">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -493,6 +498,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         }),
                       ];
                     }
+                    if (surface.kind === "space") {
+                      return typeof surface.spaceId === "string" ? [surface] : [];
+                    }
                     if (surface.kind !== "terminal") return [surface];
                     if (
                       !("resourceId" in surface) ||
@@ -626,6 +634,18 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               return upsertSurface(current, existing ?? browserSurface(null));
             }
             return upsertSurface(current, singletonSurface(kind));
+          }),
+        ),
+      openSpace: (ref, spaceId, automatic = false) =>
+        set((state) =>
+          (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
+            const existing = current.surfaces.find((surface) => surface.id === "space");
+            const surface: RightPanelSurface = { id: "space", kind: "space", spaceId };
+            const next =
+              existing?.kind === "space" && existing.spaceId !== spaceId
+                ? { ...current, surfaces: current.surfaces.filter((entry) => entry.id !== "space") }
+                : current;
+            return upsertSurface(next, surface);
           }),
         ),
       openDevice: (ref, target, automatic = false) =>

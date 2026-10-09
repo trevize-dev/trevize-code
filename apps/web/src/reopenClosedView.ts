@@ -143,6 +143,9 @@ export async function reopenClosedView(
     case "pull-request":
       panels.openPullRequest(ref, surface);
       break;
+    case "space":
+      panels.openSpace(ref, surface.spaceId);
+      break;
     default:
       panels.open(ref, surface.kind);
   }

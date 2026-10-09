@@ -181,6 +181,7 @@ import {
   useSidebar,
 } from "./ui/sidebar";
 import { MyTasksSidebarSection } from "../trevize/MyTasks";
+import { SpacesSidebarSection } from "../trevize/Spaces";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -3112,6 +3113,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
       ) : null}
       <LocalSecondaryStatus />
       <SidebarGroup>
+        <SpacesSidebarSection />
         <MyTasksSidebarSection />
         <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
           <span className="text-xs font-medium text-sidebar-muted-foreground/80">Projects</span>

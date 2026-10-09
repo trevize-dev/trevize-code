@@ -273,6 +273,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { MyTasksSidebarSection } from "../trevize/MyTasks";
+import { SpacesSidebarSection } from "../trevize/Spaces";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
@@ -5209,6 +5210,7 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
+          {!isSearchingThreads ? <SpacesSidebarSection /> : null}
           {!isSearchingThreads ? <MyTasksSidebarSection /> : null}
           {!isSearchingThreads ? (
             <TooltipProvider
