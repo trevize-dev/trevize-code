@@ -151,6 +151,15 @@ export class EnvironmentRegistry extends Context.Service<
     >;
     readonly retryNow: (environmentId: EnvironmentId) => Effect.Effect<void>;
     /**
+     * Pauses or resumes automatic retries, e.g. while the environment is known
+     * to be asleep. Not persisted. A paused connection only tries again on
+     * `retryNow`, so call it after resuming.
+     */
+    readonly setRetriesPaused: (
+      environmentId: EnvironmentId,
+      paused: boolean,
+    ) => Effect.Effect<void>;
+    /**
      * Switches a saved environment on or off. Off drops the socket, stops the
      * retry ladder, and persists so the next launch stays off. Registration,
      * credentials, and cache are untouched.
@@ -273,6 +282,7 @@ export const make = Effect.gen(function* () {
     ReadonlyMap<EnvironmentId, EnvironmentServiceScope>
   >(new Map());
   const platformEnvironmentIds = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
+  const retriesPaused = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
   const persistedEnvironmentIds = yield* Ref.make<ReadonlySet<EnvironmentId>>(
     new Set(persistedRoutesByEnvironment.keys()),
   );
@@ -366,6 +376,9 @@ export const make = Effect.gen(function* () {
           const supervisor = yield* EnvironmentSupervisor.make(entry, {
             initiallyDesired: false,
             learnRoutes: (input) => learnRoutes({ environmentId, ...input }),
+            retriesPaused: Ref.get(retriesPaused).pipe(
+              Effect.map((paused) => paused.has(environmentId)),
+            ),
           }).pipe(
             Effect.provideService(Connectivity.Connectivity, connectivity),
             Effect.provideService(ConnectionDriver.ConnectionDriver, driver),
@@ -1018,6 +1031,17 @@ export const make = Effect.gen(function* () {
       Effect.catchTags({ EnvironmentNotRegisteredError: () => Effect.void }),
       Effect.withSpan("EnvironmentRegistry.retryNow"),
     );
+  const setRetriesPaused = Effect.fn("EnvironmentRegistry.setRetriesPaused")(function* (
+    environmentId: EnvironmentId,
+    paused: boolean,
+  ) {
+    yield* Ref.update(retriesPaused, (current) => {
+      const next = new Set(current);
+      if (paused) next.add(environmentId);
+      else next.delete(environmentId);
+      return next;
+    });
+  });
   const setEnabled = Effect.fn("EnvironmentRegistry.setEnabled")(function* (
     environmentId: EnvironmentId,
     enabled: boolean,
@@ -1165,6 +1189,7 @@ export const make = Effect.gen(function* () {
     reorderRoutes,
     removeRelayEnvironments,
     retryNow,
+    setRetriesPaused,
     setEnabled,
     setCompatibility,
     state,

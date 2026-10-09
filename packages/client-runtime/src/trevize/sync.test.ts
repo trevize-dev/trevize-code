@@ -175,6 +175,7 @@ interface Harness {
   readonly pairings: Array<ConnectionOnboarding.PairingConnectionInput>;
   readonly removed: Array<EnvironmentId>;
   readonly retried: Array<EnvironmentId>;
+  readonly paused: Set<EnvironmentId>;
   readonly settings: Ref.Ref<TrevizeSync.TrevizeClientSettings>;
 }
 
@@ -198,6 +199,7 @@ const makeHarness = Effect.fn(function* (input: {
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
   const removed: Array<EnvironmentId> = [];
   const retried: Array<EnvironmentId> = [];
+  const paused = new Set<EnvironmentId>();
   const entries = yield* SubscriptionRef.make<ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>>(
     new Map(input.saved.map((entry) => [entry.target.environmentId, entry])),
   );
@@ -226,6 +228,8 @@ const makeHarness = Effect.fn(function* (input: {
     reorderRoutes: () => Effect.die("unused"),
     removeRelayEnvironments: () => Effect.die("unused"),
     retryNow: (environmentId) => Effect.sync(() => void retried.push(environmentId)),
+    setRetriesPaused: (environmentId, isPaused) =>
+      Effect.sync(() => void (isPaused ? paused.add(environmentId) : paused.delete(environmentId))),
     setEnabled: () => Effect.die("unused"),
     setCompatibility: () => Effect.die("unused"),
     state: () => Effect.succeed(input.connection ?? AVAILABLE_CONNECTION_STATE),
@@ -298,7 +302,7 @@ const makeHarness = Effect.fn(function* (input: {
       ),
     ),
   );
-  const harness: Harness = { layer, requests, pairings, removed, retried, settings };
+  const harness: Harness = { layer, requests, pairings, removed, retried, paused, settings };
   return harness;
 });
 
@@ -359,14 +363,39 @@ describe("TrevizeCloudSync", () => {
 
       yield* Effect.gen(function* () {
         yield* awaitState((state) => state.sleeping.has(T3_A));
+        // A sleeping environment does not keep retrying its connection.
+        expect([...harness.paused]).toEqual([T3_A]);
         const sync = yield* TrevizeSync.TrevizeCloudSync;
         yield* sync.wake(T3_A);
+        expect([...harness.paused]).toEqual([]);
 
         expect(harness.requests).toContain("POST /api/v1/t3/environments/env_a/connect");
         expect(harness.retried).toEqual([T3_A]);
         // The saved credential still works, so the pairing token is not redeemed.
         expect(harness.pairings).toEqual([]);
         expect((yield* SubscriptionRef.get(sync.state)).sleeping.has(T3_A)).toBe(false);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("resumes retries once Trevize reports a sleeping environment running", () =>
+    Effect.gen(function* () {
+      const environments = [trevizeEnvironment("env_a", "stopped")];
+      const harness = yield* makeHarness({
+        saved: [savedEntry(T3_A, origin("env_a"))],
+        environments,
+        managedOrigins: [],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.sleeping.has(T3_A));
+        expect([...harness.paused]).toEqual([T3_A]);
+
+        environments[0] = trevizeEnvironment("env_a", "running");
+        yield* TestClock.adjust("30 seconds");
+        yield* awaitState((state) => state.lastSyncedAt === 30_000);
+        expect([...harness.paused]).toEqual([]);
+        expect(harness.retried).toEqual([T3_A]);
       }).pipe(Effect.provide(harness.layer));
     }),
   );
