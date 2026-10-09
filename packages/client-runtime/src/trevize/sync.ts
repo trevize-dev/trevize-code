@@ -233,13 +233,24 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     });
   }).pipe(Effect.provideContext(context));
 
+  const resumeRetries = (environmentIds: ReadonlyArray<EnvironmentId>) =>
+    Effect.forEach(
+      environmentIds,
+      (environmentId) =>
+        registry
+          .setRetriesPaused(environmentId, false)
+          .pipe(Effect.andThen(registry.retryNow(environmentId))),
+      { discard: true },
+    );
+
   const syncOnce = Effect.gen(function* () {
     const loaded = yield* loadConfig;
     if (Option.isNone(loaded)) {
-      yield* SubscriptionRef.update(state, (current) => ({
+      const previous = yield* SubscriptionRef.getAndUpdate(state, (current) => ({
         ...EMPTY_TREVIZE_CLOUD_SYNC_STATE,
         waking: current.waking,
       }));
+      yield* resumeRetries([...previous.sleeping.keys()]);
       return;
     }
     if ((yield* connectivity.status) === "offline") return;
@@ -279,6 +290,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     });
 
     const sleeping = new Map<EnvironmentId, TrevizeEnvironment>();
+    const wasSleeping = (yield* SubscriptionRef.get(state)).sleeping;
     const keptOrigins: Array<string> = [];
     for (const action of plan.actions) {
       switch (action._tag) {
@@ -313,11 +325,16 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
           break;
         case "MarkSleeping":
           sleeping.set(action.environmentId, action.environment);
+          // The gateway answers 503 until something wakes it, so stop retrying.
+          yield* registry.setRetriesPaused(action.environmentId, true);
           break;
         case "Noop":
           break;
       }
     }
+
+    // Woken elsewhere (another device, Trevize itself): connect again.
+    yield* resumeRetries([...wasSleeping.keys()].filter((id) => !sleeping.has(id)));
 
     const managedOrigins = [...new Set([...plan.managedOrigins, ...keptOrigins])].sort();
     if (managedOrigins.join("\n") !== [...settings.managedOrigins].sort().join("\n")) {
@@ -393,6 +410,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
         sleeping.delete(environmentId);
         return { ...latest, sleeping };
       });
+      yield* registry.setRetriesPaused(environmentId, false);
       yield* registry.retryNow(environmentId);
       yield* syncNow;
     }).pipe(Effect.ensuring(setWaking(environmentId, false)));

@@ -683,6 +683,44 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("waits for an explicit retry while retries are paused", () =>
+    Effect.gen(function* () {
+      const paused = yield* Ref.make(false);
+      const harness = yield* makeHarness({
+        prepare: (attempt) =>
+          attempt < 3 ? Effect.fail(transient()) : Effect.succeed(PREPARED_CONNECTION),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+        retriesPaused: Ref.get(paused),
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      yield* Ref.set(paused, true);
+      yield* TestClock.adjust("1 hour");
+      yield* harness.wake("application-active");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.retryAt === null,
+      );
+      expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+
+      // An explicit retry still makes one attempt, then waits again.
+      yield* supervisor.retryNow;
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.attempt === 1 && state.retryAt === null && state.lastFailure !== null,
+      );
+      yield* TestClock.adjust("1 hour");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(2);
+
+      yield* Ref.set(paused, false);
+      yield* supervisor.retryNow;
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(3);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("resets retries when activation wakes a blocked connection", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
