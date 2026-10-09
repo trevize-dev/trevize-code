@@ -55,7 +55,7 @@ export function useOpenMyTask() {
   const run = useAtomCommand(Trevize.openTask, { reportFailure: false });
   const [openingTaskId, setOpeningTaskId] = useState<string | null>(null);
   const open = useCallback(
-    async (task: MyTask) => {
+    async (task: Pick<MyTask, "id" | "environmentId" | "t3ThreadId">) => {
       setOpeningTaskId(task.id);
       const result = await run(task);
       setOpeningTaskId((current) => (current === task.id ? null : current));

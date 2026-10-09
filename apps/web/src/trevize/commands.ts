@@ -140,7 +140,7 @@ export const openTask = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:open-task",
   concurrency: {
     mode: "singleFlight",
-    key: (task: TrevizeApi.TrevizeThread) => task.id,
+    key: (task: Pick<TrevizeApi.TrevizeThread, "id" | "environmentId" | "t3ThreadId">) => task.id,
   },
   execute: (task) =>
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.openTask(task))),

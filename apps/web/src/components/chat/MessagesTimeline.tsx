@@ -38,6 +38,8 @@ import { parseScopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/en
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import { TrevizeAgentUpdates } from "@t3tools/client-runtime/trevize";
+import { TrevizeAgentUpdateRow } from "../../trevize/AgentUpdateRow";
 import { Link } from "@tanstack/react-router";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
@@ -2068,7 +2070,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "attempt-fold" ? <AttemptFoldTimelineRow row={row} /> : null}
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
-      {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
+      {row.kind === "message" && row.message.role === "user" ? (
+        <UserOrAgentUpdateTimelineRow row={row} />
+      ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
@@ -2193,6 +2197,54 @@ const MESSAGE_HEADING_LEVEL = 3;
 
 function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;
+}
+
+/** Trevize relays agent updates as user messages carrying a `trevize-agent` record. */
+function UserOrAgentUpdateTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const update = useMemo(
+    () => TrevizeAgentUpdates.trevizeAgentUpdateOf(row.message),
+    [row.message],
+  );
+  if (update === null) return <UserTimelineRow row={row} />;
+  return <TrevizeAgentUpdateTimelineRow row={row} update={update} />;
+}
+
+/** The raw reference link only anchors the record for the model; the row already shows it. */
+function renderTrevizeAgentMessageReference(reference: ChatMarkdownContextReference) {
+  return reference.kind === TrevizeAgentUpdates.TREVIZE_AGENT_CONTEXT_KIND ? null : (
+    <span>{reference.label}</span>
+  );
+}
+
+function TrevizeAgentUpdateTimelineRow({
+  row,
+  update,
+}: {
+  row: Extract<TimelineRow, { kind: "message" }>;
+  update: TrevizeAgentUpdates.TrevizeAgentUpdate;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <TrevizeAgentUpdateRow
+      update={update}
+      trailing={
+        <TimelineRowTimestamp
+          createdAt={row.message.createdAt}
+          timestampFormat={ctx.timestampFormat}
+        />
+      }
+      body={
+        update.direction === "to-agent" ? (
+          <UserMessageBody
+            text={row.message.text}
+            renderContextReference={renderTrevizeAgentMessageReference}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        ) : null
+      }
+    />
+  );
 }
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
@@ -4691,6 +4743,8 @@ function UserMessageContextReferenceChip(props: {
   onOpenFile: (file: ChatFileAttachment) => void;
 }) {
   const { resolvedTheme } = use(TimelineRowCtx);
+  // Trevize agent updates anchor their record with a link the model reads, not the user.
+  if (props.reference.kind === TrevizeAgentUpdates.TREVIZE_AGENT_CONTEXT_KIND) return null;
   const copyMarkdown = formatComposerContextReference({
     kind: props.reference.kind,
     contextId: props.reference.contextId as ComposerContextId,
