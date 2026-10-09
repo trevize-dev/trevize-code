@@ -16,7 +16,7 @@ import * as Trevize from "./commands";
 import { SpaceBadge, useSpaces } from "./Spaces";
 
 /** Where `/shared` is mounted in every environment of a space. */
-export const SPACE_SHARED_ROOT = "/shared";
+const SPACE_SHARED_ROOT = "/shared";
 
 /**
  * Where a space thread opens on this device. `Saved` threads route by the
