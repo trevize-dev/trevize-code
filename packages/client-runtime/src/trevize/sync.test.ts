@@ -253,6 +253,9 @@ const makeHarness = Effect.fn(function* (input: {
     if (url.pathname === "/api/v1/t3/environments") {
       return Promise.resolve(Response.json({ environments: input.environments }));
     }
+    if (/^\/api\/v1\/t3\/environments\/[^/]+\/wake$/.test(url.pathname)) {
+      return Promise.resolve(Response.json({ status: "running" }));
+    }
     const connect = /^\/api\/v1\/t3\/environments\/([^/]+)\/connect$/.exec(url.pathname);
     if (connect?.[1] !== undefined) {
       return Promise.resolve(Response.json(readyJson(connect[1])));
@@ -383,7 +386,8 @@ describe("TrevizeCloudSync", () => {
         yield* sync.wake(T3_A);
         expect([...harness.paused]).toEqual([]);
 
-        expect(harness.requests).toContain("POST /api/v1/t3/environments/env_a/connect");
+        expect(harness.requests).toContain("POST /api/v1/t3/environments/env_a/wake");
+        expect(harness.requests).not.toContain("POST /api/v1/t3/environments/env_a/connect");
         expect(harness.retried).toEqual([T3_A]);
         // The saved credential still works, so the pairing token is not redeemed.
         expect(harness.pairings).toEqual([]);

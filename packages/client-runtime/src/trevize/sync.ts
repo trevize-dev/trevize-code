@@ -22,7 +22,7 @@ import * as ConnectionWakeups from "../connection/wakeups.ts";
 import {
   DEFAULT_TREVIZE_API_URL,
   TrevizeApiError,
-  connectWhenReady,
+  wakeWhenReady,
   listEnvironments,
   listWorkspaces,
   type TrevizeApiConfig,
@@ -181,9 +181,9 @@ export class TrevizeCloudSync extends Context.Service<
     /** Asks the sync loop to run now. Returns once requested, not once done. */
     readonly syncNow: Effect.Effect<void>;
     /**
-     * Wakes a saved, sleeping Trevize environment through Trevize `connect`,
-     * then retries its connection immediately. The pairing token the call
-     * returns is dropped: the saved credential still works.
+     * Wakes a saved, sleeping Trevize environment through Trevize `wake`,
+     * then retries its connection immediately. The saved credential still
+     * works, so no pairing token is minted.
      */
     readonly wake: (environmentId: EnvironmentId) => Effect.Effect<void, TrevizeApiError>;
   }
@@ -418,7 +418,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     }
     yield* setWaking(environmentId, true);
     yield* Effect.gen(function* () {
-      yield* connectWhenReady(loaded.value.config, environment.id).pipe(
+      yield* wakeWhenReady(loaded.value.config, environment.id).pipe(
         Effect.provideContext(context),
       );
       yield* SubscriptionRef.update(state, (latest) => {
