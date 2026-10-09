@@ -206,7 +206,7 @@ export class TrevizeCloudSync extends Context.Service<
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
-export const SYNC_INTERVAL = Duration.seconds(30);
+const SYNC_INTERVAL = Duration.seconds(30);
 /** Background pairing only targets running environments, so this is short. */
 const PAIR_MAX_WAIT_MS = 30_000;
 
