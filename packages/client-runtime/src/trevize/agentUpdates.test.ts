@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import {
   decodeTrevizeAgentRecord,
+  trevizeAgentMessageBody,
   trevizeAgentUpdateOf,
   trevizeAgentUpdateTarget,
 } from "./agentUpdates.ts";
@@ -147,5 +148,36 @@ describe("trevizeAgentUpdateTarget", () => {
         environments,
       }),
     ).toEqual(expected);
+  });
+});
+
+describe("trevizeAgentMessageBody", () => {
+  it("strips the lead-in line that references the orchestrator", () => {
+    expect(
+      trevizeAgentMessageBody(
+        "Message from your orchestrator [Billing [v2]](t3-context://v1/trevize-agent/ctx_1):\n\nRebase onto main.\n\nThen rerun tests.",
+      ),
+    ).toBe("Rebase onto main.\n\nThen rerun tests.");
+  });
+
+  it("matches any lead-in wording and CRLF line endings", () => {
+    expect(
+      trevizeAgentMessageBody(
+        "From [Orchestrator](t3-context://v1/trevize-agent/ctx_1) :\r\n\r\nShip it.",
+      ),
+    ).toBe("Ship it.");
+  });
+
+  it("keeps text without a trevize-agent lead-in", () => {
+    const cases = [
+      "Rebase onto main.",
+      // Another kind of reference.
+      "See [file](t3-context://v1/file/ctx_2):\n\nRebase onto main.",
+      // No blank line after the lead-in.
+      "Message from [Orchestrator](t3-context://v1/trevize-agent/ctx_1):\nRebase onto main.",
+      // The reference is not on the first line.
+      "Hi\nMessage from [Orchestrator](t3-context://v1/trevize-agent/ctx_1):\n\nRebase.",
+    ];
+    for (const text of cases) expect(trevizeAgentMessageBody(text)).toBe(text);
   });
 });
