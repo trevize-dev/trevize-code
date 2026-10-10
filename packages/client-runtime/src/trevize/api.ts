@@ -93,7 +93,8 @@ export type TrevizeThread = typeof TrevizeThread.Type;
 /**
  * A space (`GET /spaces`): an orchestrator chat plus the environments it runs
  * agents in, all sharing a `/shared` volume. `orchestratorThreadId` is a
- * Trevize thread id, null until the orchestrator was started once.
+ * Trevize thread id, null until Trevize has launched the orchestrator (it
+ * does so in the background after the space is created).
  */
 export const TrevizeSpace = Schema.Struct({
   id: Schema.String,
@@ -110,25 +111,6 @@ export const TrevizeSpace = Schema.Struct({
   maxEnvironments: Schema.optional(Schema.Number),
 });
 export type TrevizeSpace = typeof TrevizeSpace.Type;
-
-const TrevizeOrchestratorStarted = Schema.Struct({
-  threadId: Schema.String,
-  environmentId: Schema.String,
-  deepLinkUrl: Schema.optional(Schema.NullOr(Schema.String)),
-  existing: Schema.optional(Schema.Boolean),
-});
-export type TrevizeOrchestratorStarted = typeof TrevizeOrchestratorStarted.Type;
-
-/** The `409` detail while the space's environment provisions or starts. */
-const TrevizeOrchestratorPending = Schema.Struct({
-  status: Schema.optional(Schema.String),
-  retryAfterSeconds: Schema.optional(Schema.Number),
-  error: Schema.optional(Schema.NullOr(Schema.String)),
-});
-const OrchestratorConflictBody = Schema.Struct({
-  message: Schema.optional(Schema.String),
-  data: Schema.optional(TrevizeOrchestratorPending),
-});
 
 const TrevizeConnectReady = Schema.Struct({
   status: Schema.Literal("ready"),
@@ -531,6 +513,12 @@ export const listSpaces = Effect.fn("clientRuntime.trevize.listSpaces")(function
   );
 });
 
+export interface TrevizeOrchestratorModel {
+  /** A T3 provider driver kind, e.g. `codex`. */
+  readonly provider: string;
+  readonly model: string;
+}
+
 export interface TrevizeSpaceInput {
   readonly workspaceId: string;
   readonly name: string;
@@ -539,9 +527,11 @@ export interface TrevizeSpaceInput {
   readonly repositoryIds: ReadonlyArray<string>;
   /** Most sandboxes the space runs at once, 1–32. */
   readonly maxEnvironments?: number;
+  /** The orchestrator's model; Trevize launches it with the space. */
+  readonly orchestratorModel?: TrevizeOrchestratorModel | null;
 }
 
-/** Creates a space. Its orchestrator is not started; see `startOrchestratorWhenReady`. */
+/** Creates a space. Trevize launches its orchestrator in the background. */
 export const createSpace = Effect.fn("clientRuntime.trevize.createSpace")(function* (
   config: TrevizeApiConfig,
   input: TrevizeSpaceInput,
@@ -556,6 +546,14 @@ export const createSpace = Effect.fn("clientRuntime.trevize.createSpace")(functi
         repositoryIds: input.repositoryIds,
         ...(instructions ? { instructions } : {}),
         ...(input.maxEnvironments === undefined ? {} : { maxEnvironments: input.maxEnvironments }),
+        ...(input.orchestratorModel
+          ? {
+              orchestrator: {
+                provider: input.orchestratorModel.provider,
+                model: input.orchestratorModel.model,
+              },
+            }
+          : {}),
       }),
     ),
     TrevizeSpace,
@@ -571,74 +569,4 @@ export const archiveSpace = Effect.fn("clientRuntime.trevize.archiveSpace")(func
     HttpClientRequest.post(apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}/archive`)),
     TrevizeSpace,
   );
-});
-
-export interface TrevizeOrchestratorModel {
-  /** A T3 provider driver kind, e.g. `codex`. */
-  readonly provider: string;
-  readonly model: string;
-}
-
-/** Long enough for a new space's first sandbox to provision and start T3. */
-const DEFAULT_ORCHESTRATOR_MAX_WAIT_MS = 10 * 60_000;
-
-/**
- * Starts the space's orchestrator thread, or returns the existing one. While
- * the space's environment provisions Trevize answers 409 with a retry hint;
- * this polls like `connectWhenReady`. The model only applies to the first
- * launch.
- */
-export const startOrchestratorWhenReady = Effect.fn(
-  "clientRuntime.trevize.startOrchestratorWhenReady",
-)(function* (
-  config: TrevizeApiConfig,
-  spaceId: string,
-  options?: {
-    readonly model?: TrevizeOrchestratorModel | null;
-    readonly maxWaitMs?: number;
-  },
-) {
-  const maxWaitMs = options?.maxWaitMs ?? DEFAULT_ORCHESTRATOR_MAX_WAIT_MS;
-  const model = options?.model;
-  const startedAt = yield* Clock.currentTimeMillis;
-  while (true) {
-    const response = yield* send(
-      config,
-      HttpClientRequest.post(
-        apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}/orchestrator`),
-      ).pipe(
-        HttpClientRequest.bodyJsonUnsafe(
-          model ? { provider: model.provider, model: model.model } : {},
-        ),
-      ),
-    );
-    if (response.status >= 200 && response.status < 300) {
-      return yield* decodeResponse(response, TrevizeOrchestratorStarted);
-    }
-    if (response.status !== 409) {
-      return yield* failureFromResponse(response);
-    }
-    const pending = (yield* decodeResponse(response, OrchestratorConflictBody)).data;
-    if (pending?.status === "failed") {
-      return yield* new TrevizeApiError({
-        reason: "failed",
-        message: pending.error
-          ? `The space's environment failed to start: ${pending.error}`
-          : "The space's environment failed to start. Try again in a minute.",
-      });
-    }
-    const delayMs =
-      Math.min(
-        MAX_RETRY_SECONDS,
-        Math.max(MIN_RETRY_SECONDS, pending?.retryAfterSeconds ?? DEFAULT_WAKE_RETRY_SECONDS),
-      ) * 1000;
-    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
-    if (elapsedMs + delayMs > maxWaitMs) {
-      return yield* new TrevizeApiError({
-        reason: "timeout",
-        message: "The space's environment is still starting. Try again in a minute.",
-      });
-    }
-    yield* Effect.sleep(Duration.millis(delayMs));
-  }
 });

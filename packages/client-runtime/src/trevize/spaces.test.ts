@@ -10,6 +10,7 @@ import {
   spaceActivityAt,
   spaceAgents,
   spaceColorIndex,
+  spaceEnvironmentFailed,
   spaceInitials,
   spaceNeedsYou,
 } from "./spaces.ts";
@@ -139,5 +140,17 @@ describe("space tabs", () => {
     expect(closeSpaceTab(["a", "b"], "b", "b")).toEqual({ tabs: ["a"], active: "a" });
     expect(closeSpaceTab(["a"], "a", "a")).toEqual({ tabs: [], active: null });
     expect(closeSpaceTab(["a", "b"], "a", null)).toEqual({ tabs: ["b"], active: null });
+  });
+});
+
+describe("spaceEnvironmentFailed", () => {
+  it("flags a failed environment of the space only", () => {
+    const environments = [
+      { spaceId: "spc_1", status: "running" },
+      { spaceId: "spc_2", status: "failed" },
+      { spaceId: null, status: "failed" },
+    ] as const;
+    expect(spaceEnvironmentFailed("spc_1", environments)).toBe(false);
+    expect(spaceEnvironmentFailed("spc_2", environments)).toBe(true);
   });
 });

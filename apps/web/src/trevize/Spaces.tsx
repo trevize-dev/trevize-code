@@ -31,8 +31,6 @@ export interface SpacesState {
   readonly spaces: ReadonlyArray<Space>;
   readonly threads: ReadonlyArray<TrevizeApi.TrevizeThread>;
   readonly environments: ReadonlyArray<TrevizeApi.TrevizeEnvironment>;
-  readonly startingSpaces: ReadonlySet<string>;
-  readonly spaceStartErrors: ReadonlyMap<string, string>;
   /** Whether the sync loop has listed Trevize at least once. */
   readonly loaded: boolean;
 }
@@ -57,8 +55,6 @@ export function useSpaces(): SpacesState {
         : [],
       threads: sync.spaceThreads,
       environments: sync.environments,
-      startingSpaces: sync.startingSpaces,
-      spaceStartErrors: sync.spaceStartErrors,
       loaded: sync.lastSyncedAt !== null,
     };
   }, [sync]);
