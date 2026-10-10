@@ -160,12 +160,12 @@ function SpaceContent({
     setOpenTabs(next.tabs);
     if (next.active !== tab) selectTab(next.active);
   };
-  // A link straight to an agent (e.g. from the palette) opens its tab too.
+  // A link straight to an agent (e.g. from the palette) opens its tab too. Keyed
+  // on the route only: closing the active tab drops it before the navigation
+  // away lands, and reacting to `openTabs` would re-add it in between.
   useEffect(() => {
-    if (tab !== null && !openTabs.includes(tab)) {
-      setOpenTabs((current) => TrevizeSpaces.openSpaceTab(current, tab));
-    }
-  }, [openTabs, setOpenTabs, tab]);
+    if (tab !== null) setOpenTabs((current) => TrevizeSpaces.openSpaceTab(current, tab));
+  }, [setOpenTabs, tab]);
 
   const target = useSpaceThreadTarget(activeThread);
   const ref = useMemo(() => savedThreadRef(target), [target]);
