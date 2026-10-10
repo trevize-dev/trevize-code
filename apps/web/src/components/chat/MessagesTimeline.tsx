@@ -2224,6 +2224,10 @@ function TrevizeAgentUpdateTimelineRow({
   update: TrevizeAgentUpdates.TrevizeAgentUpdate;
 }) {
   const ctx = use(TimelineRowCtx);
+  const body =
+    update.direction === "to-agent"
+      ? TrevizeAgentUpdates.trevizeAgentMessageBody(row.message.text)
+      : "";
   return (
     <TrevizeAgentUpdateRow
       update={update}
@@ -2234,9 +2238,9 @@ function TrevizeAgentUpdateTimelineRow({
         />
       }
       body={
-        update.direction === "to-agent" ? (
+        body.length > 0 ? (
           <UserMessageBody
-            text={row.message.text}
+            text={body}
             renderContextReference={renderTrevizeAgentMessageReference}
             skills={ctx.skills}
             markdownCwd={ctx.markdownCwd}

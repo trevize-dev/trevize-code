@@ -103,6 +103,19 @@ export function trevizeAgentUpdateOf(message: {
   return null;
 }
 
+const TREVIZE_AGENT_LEAD_IN = new RegExp(
+  String.raw`^[^\n]*\]\(t3-context://v1/${TREVIZE_AGENT_CONTEXT_KIND}/[^)\s]*\)[^\n]*:[ \t]*\r?\n[ \t]*\r?\n`,
+);
+
+/**
+ * The body of an orchestrator-to-agent message without its lead-in line
+ * ("Message from your orchestrator [title](t3-context://…):"), which only
+ * names the sender for the model; the update row already shows it.
+ */
+export function trevizeAgentMessageBody(text: string): string {
+  return text.replace(TREVIZE_AGENT_LEAD_IN, "").trim();
+}
+
 /** Where clicking the other party's name goes. */
 export type TrevizeAgentUpdateTarget =
   | {
