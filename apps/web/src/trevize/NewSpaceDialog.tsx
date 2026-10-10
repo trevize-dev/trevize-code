@@ -74,8 +74,10 @@ function Field(props: {
   readonly htmlFor?: string;
   readonly children: ReactNode;
 }) {
+  // A flex column, not `space-y`: Label and the model picker are both inline-level,
+  // so in normal flow they share line boxes and the picker rides up into the label.
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-1.5">
       <Label htmlFor={props.htmlFor}>{props.label}</Label>
       {props.children}
       {props.hint ? <p className="text-xs text-muted-foreground">{props.hint}</p> : null}
