@@ -63,7 +63,7 @@ export const TrevizeEnvironment = Schema.Struct({
 export type TrevizeEnvironment = typeof TrevizeEnvironment.Type;
 
 /**
- * A thread Trevize launched in one of its environments (`GET /t3/threads`).
+ * A thread Trevize launched in one of its environments (`GET /threads`).
  * `environmentId` is the Trevize environment id, not the T3 server's.
  * Decoded tolerantly: kinds and statuses are open strings, and the live
  * thread status fields are optional until Trevize reports them.
@@ -74,7 +74,7 @@ export const TrevizeThread = Schema.Struct({
   environmentTitle: Schema.optional(Schema.NullOr(Schema.String)),
   environmentStatus: Schema.optional(Schema.NullOr(Schema.String)),
   workspaceId: Schema.optional(Schema.String),
-  t3ThreadId: Schema.String,
+  runtimeThreadId: Schema.String,
   title: Schema.optional(Schema.NullOr(Schema.String)),
   sourceKind: Schema.String,
   sourceRef: Schema.optional(Schema.NullOr(Schema.String)),
@@ -269,7 +269,7 @@ export const listMyThreads = Effect.fn("clientRuntime.trevize.listMyThreads")(fu
 ) {
   const body = yield* execute(
     config,
-    HttpClientRequest.get(apiUrl(config, "/t3/threads")).pipe(
+    HttpClientRequest.get(apiUrl(config, "/threads")).pipe(
       HttpClientRequest.setUrlParam("workspaceId", workspaceId),
       HttpClientRequest.setUrlParam("assignee", "me"),
     ),

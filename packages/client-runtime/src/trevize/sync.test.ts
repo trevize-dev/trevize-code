@@ -257,7 +257,7 @@ const makeHarness = Effect.fn(function* (input: {
     if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
     }
-    if (url.pathname === "/api/v1/t3/threads" && input.threads !== undefined) {
+    if (url.pathname === "/api/v1/threads" && input.threads !== undefined) {
       return Promise.resolve(Response.json({ threads: input.threads }));
     }
     const connect = /^\/api\/v1\/environments\/([^/]+)\/connect$/.exec(url.pathname);
@@ -453,7 +453,7 @@ describe("TrevizeCloudSync", () => {
           {
             id: "thr_1",
             environmentId: "env_a",
-            t3ThreadId: "t3-thread-1",
+            runtimeThreadId: "t3-thread-1",
             sourceKind: "linear",
             createdAt: "2026-10-01T00:00:00.000Z",
           },
@@ -464,7 +464,7 @@ describe("TrevizeCloudSync", () => {
         const synced = yield* awaitState((state) => state.lastSyncedAt !== null);
         const task = Option.getOrThrow(synced).myTasks[0];
         expect(task?.id).toBe("thr_1");
-        expect(harness.requests).toContain("GET /api/v1/t3/threads?workspaceId=ws_1&assignee=me");
+        expect(harness.requests).toContain("GET /api/v1/threads?workspaceId=ws_1&assignee=me");
         if (task === undefined) return;
 
         const sync = yield* TrevizeSync.TrevizeCloudSync;

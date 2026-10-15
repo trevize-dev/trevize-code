@@ -108,8 +108,8 @@ describe("Trevize API client", () => {
         environmentTitle: "Checkout revamp",
         environmentStatus: "stopped",
         workspaceId: "ws_1",
-        t3ThreadId: "t3-thread-1",
-        t3ProjectId: "t3-project-1",
+        runtimeThreadId: "t3-thread-1",
+        runtimeProjectId: "t3-project-1",
         title: null,
         sourceKind: "linear",
         sourceRef: "LIN-123",
@@ -117,13 +117,13 @@ describe("Trevize API client", () => {
         assigneeUserId: "user_1",
         createdByUserId: null,
         branch: "trevize/lin-123-abc",
-        deepLinkUrl: "https://t3-env_1.gw.example.test/env/t3-thread-1",
+        deepLinkUrl: "https://env-env_1.gw.example.test/env/t3-thread-1",
         createdAt: "2026-10-01T00:00:00.000Z",
       };
       const newer = {
         id: "thr_2",
         environmentId: "env_1",
-        t3ThreadId: "t3-thread-2",
+        runtimeThreadId: "t3-thread-2",
         sourceKind: "manual",
         createdAt: "2026-10-02T00:00:00.000Z",
         updatedAt: "2026-10-03T00:00:00.000Z",
@@ -142,7 +142,7 @@ describe("Trevize API client", () => {
       ]);
       expect(threads[1]?.pendingRuntimeRequest).toEqual({ kind: "approval" });
       expect(calls[0]?.url).toBe(
-        "https://trevize.example.test/api/v1/t3/threads?workspaceId=ws_1&assignee=me",
+        "https://trevize.example.test/api/v1/threads?workspaceId=ws_1&assignee=me",
       );
     }),
   );
