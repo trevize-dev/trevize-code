@@ -17,7 +17,7 @@ const payload = {
   thread: {
     id: "thr_agent",
     environmentId: "env_agent",
-    t3ThreadId: "t3-agent",
+    runtimeThreadId: "t3-agent",
     title: "Fix billing webhooks",
   },
   event: "pull_request",
@@ -52,6 +52,14 @@ describe("trevizeAgentUpdateOf", () => {
       detail: "Adds retries.\n\nTests pass.",
       pullRequestUrl: "https://github.com/acme/billing/pull/7",
     });
+  });
+
+  it("decodes records written before Trevize renamed t3ThreadId", () => {
+    const { runtimeThreadId, ...legacyThread } = payload.thread;
+    const update = trevizeAgentUpdateOf(
+      messageWith([agentRecord({ thread: { ...legacyThread, t3ThreadId: runtimeThreadId } })]),
+    );
+    expect(update?.thread).toEqual(payload.thread);
   });
 
   it("is null for messages without a trevize-agent record", () => {
@@ -136,7 +144,7 @@ describe("trevizeAgentUpdateTarget", () => {
   it("opens the thread outside its space", () => {
     const expected = {
       _tag: "OpenThread",
-      thread: { id: "thr_agent", environmentId: "env_agent", t3ThreadId: "t3-agent" },
+      thread: { id: "thr_agent", environmentId: "env_agent", runtimeThreadId: "t3-agent" },
     };
     expect(
       trevizeAgentUpdateTarget({ thread: payload.thread, activeSpace: null, environments }),
