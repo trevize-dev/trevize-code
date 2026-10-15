@@ -53,8 +53,9 @@ const environmentJson = {
   workspaceId: "ws_1",
   title: "Checkout revamp",
   status: "running",
+  runtime: "trevize-code",
   repositoryIds: ["acme/web"],
-  httpBaseUrl: "https://t3-env_1.gw.example.test",
+  httpBaseUrl: "https://env-env_1.gw.example.test",
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
   lastActivityAt: null,
@@ -63,8 +64,8 @@ const environmentJson = {
 
 const readyJson = {
   status: "ready",
-  httpBaseUrl: "https://t3-env_1.gw.example.test",
-  wsBaseUrl: "wss://t3-env_1.gw.example.test",
+  httpBaseUrl: "https://env-env_1.gw.example.test",
+  wsBaseUrl: "wss://env-env_1.gw.example.test",
   pairingToken: "pairing-token",
   pairingUrl: "https://app.t3.codes/pair?host=x#token=pairing-token",
   expiresAt: "2026-10-01T00:10:00.000Z",
@@ -87,7 +88,7 @@ describe("Trevize API client", () => {
       expect(calls).toEqual([
         {
           method: "GET",
-          url: "https://trevize.example.test/api/v1/t3/environments?workspaceId=ws+1",
+          url: "https://trevize.example.test/api/v1/environments?workspaceId=ws+1",
           authorization: "Bearer tvz_test",
           body: null,
           // No `traceparent`/`b3`: Trevize's CORS preflight rejects them.
@@ -193,7 +194,7 @@ describe("Trevize API client", () => {
       expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual(
         Array.from(
           { length: 3 },
-          () => "POST https://trevize.example.test/api/v1/t3/environments/env_1/connect",
+          () => "POST https://trevize.example.test/api/v1/environments/env_1/connect",
         ),
       );
     }),
@@ -277,7 +278,7 @@ describe("connectTrevizeEnvironment", () => {
       expect(environmentId).toBe("t3-environment");
       expect(pairings).toEqual([
         {
-          host: "https://t3-env_1.gw.example.test",
+          host: "https://env-env_1.gw.example.test",
           pairingCode: "pairing-token",
           label: "Checkout revamp",
           // Only the gateway reaches the sandbox, never its container addresses.
@@ -301,15 +302,15 @@ describe("findSavedTrevizeEnvironment", () => {
         target: new BearerConnectionTarget({
           environmentId,
           label: "Checkout revamp",
-          connectionId: "bearer:t3-environment:https://t3-env_1.gw.example.test",
+          connectionId: "bearer:t3-environment:https://env-env_1.gw.example.test",
         }),
         profile: Option.some(
           new BearerConnectionProfile({
-            connectionId: "bearer:t3-environment:https://t3-env_1.gw.example.test",
+            connectionId: "bearer:t3-environment:https://env-env_1.gw.example.test",
             environmentId,
             label: "Checkout revamp",
-            httpBaseUrl: "https://t3-env_1.gw.example.test/",
-            wsBaseUrl: "wss://t3-env_1.gw.example.test/",
+            httpBaseUrl: "https://env-env_1.gw.example.test/",
+            wsBaseUrl: "wss://env-env_1.gw.example.test/",
           }),
         ),
       },
@@ -318,10 +319,10 @@ describe("findSavedTrevizeEnvironment", () => {
   };
 
   it("matches a saved route by gateway origin", () => {
-    expect(findSavedTrevizeEnvironment([bearerEntry], "https://t3-env_1.gw.example.test")).toBe(
+    expect(findSavedTrevizeEnvironment([bearerEntry], "https://env-env_1.gw.example.test")).toBe(
       environmentId,
     );
-    expect(findSavedTrevizeEnvironment([bearerEntry], "https://t3-env_2.gw.example.test")).toBe(
+    expect(findSavedTrevizeEnvironment([bearerEntry], "https://env-env_2.gw.example.test")).toBe(
       null,
     );
   });
