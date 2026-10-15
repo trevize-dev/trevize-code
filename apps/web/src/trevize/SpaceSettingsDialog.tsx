@@ -37,7 +37,7 @@ import { SpaceIconPicker } from "./SpaceIconPicker";
 import { useSpaces, type Space } from "./Spaces";
 
 /** Opens a space's settings from anywhere (space menu, command palette). */
-export const useSpaceSettingsDialogStore = create<{
+const useSpaceSettingsDialogStore = create<{
   readonly spaceId: string | null;
   readonly setSpaceId: (spaceId: string | null) => void;
 }>((set) => ({ spaceId: null, setSpaceId: (spaceId) => set({ spaceId }) }));

@@ -1,7 +1,7 @@
 import { iconNames, type IconName } from "lucide-react/dynamic";
 
 /** Shown before the user searches; search covers every Lucide icon. */
-export const SPACE_ICONS = [
+const SPACE_ICONS = [
   "layout-grid",
   "folder-code",
   "code-xml",
