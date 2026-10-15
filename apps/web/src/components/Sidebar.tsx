@@ -272,8 +272,7 @@ import {
   useComboboxFilter,
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
-import { MyTasksSidebarSection } from "../trevize/MyTasks";
-import { SpacesSidebarSection } from "../trevize/Spaces";
+import { SpacesSidebarSection, useSpaceEnvironmentIds } from "../trevize/Spaces";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
@@ -2386,7 +2385,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const threads = useThreadShells();
+  const allThreads = useThreadShells();
+  // A space's orchestrator and agents belong to the space, not the thread list.
+  const spaceEnvironmentIds = useSpaceEnvironmentIds();
+  const threads = useMemo(
+    () => allThreads.filter((thread) => !spaceEnvironmentIds.has(thread.environmentId)),
+    [allThreads, spaceEnvironmentIds],
+  );
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -5211,7 +5216,6 @@ export default function Sidebar() {
             )
           ) : null}
           {!isSearchingThreads ? <SpacesSidebarSection /> : null}
-          {!isSearchingThreads ? <MyTasksSidebarSection /> : null}
           {!isSearchingThreads ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
