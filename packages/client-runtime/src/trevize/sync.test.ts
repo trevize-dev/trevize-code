@@ -41,7 +41,7 @@ function trevizeEnvironment(
     title: id,
     status,
     repositoryIds: [],
-    httpBaseUrl: `https://t3-${id}.gw.example.test`,
+    httpBaseUrl: `https://env-${id}.gw.example.test`,
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
     lastActivityAt: null,
@@ -50,7 +50,7 @@ function trevizeEnvironment(
 }
 
 function origin(id: string) {
-  return `https://t3-${id}.gw.example.test`;
+  return `https://env-${id}.gw.example.test`;
 }
 
 function savedEntry(environmentId: EnvironmentId, httpBaseUrl: string): ConnectionCatalogEntry {
@@ -251,16 +251,16 @@ const makeHarness = Effect.fn(function* (input: {
         Response.json({ items: [{ id: "ws_1", name: "Acme", slug: "acme" }] }),
       );
     }
-    if (url.pathname === "/api/v1/t3/environments") {
+    if (url.pathname === "/api/v1/environments") {
       return Promise.resolve(Response.json({ environments: input.environments }));
     }
-    if (/^\/api\/v1\/t3\/environments\/[^/]+\/wake$/.test(url.pathname)) {
+    if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
     }
     if (url.pathname === "/api/v1/t3/threads" && input.threads !== undefined) {
       return Promise.resolve(Response.json({ threads: input.threads }));
     }
-    const connect = /^\/api\/v1\/t3\/environments\/([^/]+)\/connect$/.exec(url.pathname);
+    const connect = /^\/api\/v1\/environments\/([^/]+)\/connect$/.exec(url.pathname);
     if (connect?.[1] !== undefined) {
       return Promise.resolve(Response.json(readyJson(connect[1])));
     }
@@ -390,8 +390,8 @@ describe("TrevizeCloudSync", () => {
         yield* sync.wake(T3_A);
         expect([...harness.paused]).toEqual([]);
 
-        expect(harness.requests).toContain("POST /api/v1/t3/environments/env_a/wake");
-        expect(harness.requests).not.toContain("POST /api/v1/t3/environments/env_a/connect");
+        expect(harness.requests).toContain("POST /api/v1/environments/env_a/wake");
+        expect(harness.requests).not.toContain("POST /api/v1/environments/env_a/connect");
         expect(harness.retried).toEqual([T3_A]);
         // The saved credential still works, so the pairing token is not redeemed.
         expect(harness.pairings).toEqual([]);
