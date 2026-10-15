@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { TrevizeMyTasks, TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
+import { DynamicIcon } from "lucide-react/dynamic";
 import { useMemo } from "react";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
@@ -19,6 +20,7 @@ import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { cn } from "~/lib/utils";
 import { formatRelativeTime } from "~/timestampFormat";
 import * as Trevize from "./commands";
+import { isSpaceIconName } from "./spaceIconOptions";
 
 const SPACES_EXPANDED_STORAGE_KEY = "t3code:trevize:spaces-expanded:v1";
 
@@ -79,17 +81,42 @@ const SPACE_BADGE_TONES = [
   "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
 ] as const;
 
-/** A space's colored initials square; the color is stable per space id. */
-export function SpaceBadge({ space }: { readonly space: Pick<Space, "id" | "name"> }) {
+/**
+ * A space's icon square: its chosen icon or emoji, else its initials. A
+ * chosen color tints it; without one the tone is stable per space id.
+ */
+export function SpaceBadge({
+  space,
+  size = "sm",
+}: {
+  readonly space: Pick<Space, "id" | "name" | "icon" | "color">;
+  readonly size?: "sm" | "lg";
+}) {
+  const icon = TrevizeSpaces.parseSpaceIcon(space.icon);
+  const iconName = icon?.kind === "icon" && isSpaceIconName(icon.name) ? icon.name : null;
+  const color = TrevizeSpaces.normalizeSpaceColor(space.color);
   return (
     <span
       aria-hidden
       className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded-sm text-4xs leading-none font-semibold",
-        SPACE_BADGE_TONES[TrevizeSpaces.spaceColorIndex(space.id, SPACE_BADGE_TONES.length)],
+        "flex shrink-0 items-center justify-center rounded-sm leading-none font-semibold",
+        size === "lg" ? "size-7 rounded-md text-xs" : "size-4 text-4xs",
+        color === null &&
+          SPACE_BADGE_TONES[TrevizeSpaces.spaceColorIndex(space.id, SPACE_BADGE_TONES.length)],
       )}
+      style={
+        color === null
+          ? undefined
+          : { color, backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)` }
+      }
     >
-      {TrevizeSpaces.spaceInitials(space.name)}
+      {iconName !== null ? (
+        <DynamicIcon name={iconName} className={size === "lg" ? "size-4" : "size-3"} />
+      ) : icon?.kind === "emoji" ? (
+        <span className={size === "lg" ? "text-base" : "text-2xs"}>{icon.emoji}</span>
+      ) : (
+        TrevizeSpaces.spaceInitials(space.name)
+      )}
     </span>
   );
 }

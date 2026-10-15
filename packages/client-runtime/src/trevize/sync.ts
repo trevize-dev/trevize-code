@@ -24,6 +24,7 @@ import {
   TrevizeApiError,
   archiveSpace as archiveTrevizeSpace,
   createSpace as createTrevizeSpace,
+  updateSpace as updateTrevizeSpace,
   wakeWhenReady,
   listEnvironments,
   listMyThreads,
@@ -34,6 +35,7 @@ import {
   type TrevizeEnvironment,
   type TrevizeSpace,
   type TrevizeSpaceInput,
+  type TrevizeSpacePatch,
   type TrevizeThread,
 } from "./api.ts";
 import {
@@ -229,6 +231,11 @@ export class TrevizeCloudSync extends Context.Service<
      * and a later listing carries its thread. Returns once the space exists.
      */
     readonly createSpace: (input: CreateSpaceInput) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
+    /** Saves a space's settings and shows them without waiting for the next listing. */
+    readonly updateSpace: (
+      spaceId: string,
+      patch: TrevizeSpacePatch,
+    ) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
     readonly archiveSpace: (spaceId: string) => Effect.Effect<void, TrevizeApiError>;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
@@ -624,6 +631,21 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     return space;
   });
 
+  const updateSpace = Effect.fn("TrevizeCloudSync.updateSpace")(function* (
+    spaceId: string,
+    patch: TrevizeSpacePatch,
+  ) {
+    const { config } = yield* requireConfig("change this space");
+    const space = yield* updateTrevizeSpace(config, spaceId, patch).pipe(
+      Effect.provideContext(context),
+    );
+    yield* SubscriptionRef.update(state, (current) => ({
+      ...current,
+      spaces: current.spaces.map((candidate) => (candidate.id === space.id ? space : candidate)),
+    }));
+    return space;
+  });
+
   const archiveSpace = Effect.fn("TrevizeCloudSync.archiveSpace")(function* (spaceId: string) {
     const { config } = yield* requireConfig("archive this space");
     yield* archiveTrevizeSpace(config, spaceId).pipe(Effect.provideContext(context));
@@ -653,6 +675,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     wake,
     openTask,
     createSpace,
+    updateSpace,
     archiveSpace,
   });
 });

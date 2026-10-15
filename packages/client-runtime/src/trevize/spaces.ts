@@ -1,6 +1,6 @@
 import type { RepositoryIdentity } from "@t3tools/contracts";
 
-import type { TrevizeEnvironment, TrevizeSpace, TrevizeThread } from "./api.ts";
+import type { TrevizeEnvironment, TrevizeSpace, TrevizeSpacePatch, TrevizeThread } from "./api.ts";
 import { deriveMyTaskStatus, myTaskActivityAt } from "./myTasks.ts";
 
 /**
@@ -94,6 +94,72 @@ export function spaceColorIndex(spaceId: string, count: number): number {
     hash = (hash * 31 + spaceId.charCodeAt(index)) | 0;
   }
   return Math.abs(hash) % Math.max(1, count);
+}
+
+export type SpaceIcon =
+  | { readonly kind: "icon"; readonly name: string }
+  | { readonly kind: "emoji"; readonly emoji: string };
+
+const SPACE_ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** A space's stored icon: a kebab-case Lucide icon name, else an emoji; null shows initials. */
+export function parseSpaceIcon(icon: string | null | undefined): SpaceIcon | null {
+  const value = icon?.trim();
+  if (!value) return null;
+  return SPACE_ICON_NAME.test(value)
+    ? { kind: "icon", name: value }
+    : { kind: "emoji", emoji: value };
+}
+
+/** A space's stored color when it is `#rrggbb`, lowercased; anything else uses the default tone. */
+export function normalizeSpaceColor(color: string | null | undefined): string | null {
+  const value = color?.trim().toLowerCase();
+  return value && /^#[0-9a-f]{6}$/.test(value) ? value : null;
+}
+
+/** What the space settings dialog edits. */
+export interface SpaceSettingsDraft {
+  readonly name: string;
+  readonly icon: string | null;
+  readonly color: string | null;
+  readonly instructions: string;
+  readonly maxEnvironments: number;
+}
+
+export function spaceSettingsDraft(
+  space: Pick<TrevizeSpace, "name" | "icon" | "color" | "instructions" | "maxEnvironments">,
+): SpaceSettingsDraft {
+  return {
+    name: space.name,
+    icon: space.icon ?? null,
+    color: normalizeSpaceColor(space.color),
+    instructions: space.instructions ?? "",
+    maxEnvironments: space.maxEnvironments ?? DEFAULT_SPACE_ENVIRONMENTS,
+  };
+}
+
+/**
+ * The fields of `draft` that differ from the space, or null when nothing
+ * changed. Blank instructions clear them; a blank name is never sent.
+ */
+export function spaceSettingsPatch(
+  space: Pick<TrevizeSpace, "name" | "icon" | "color" | "instructions" | "maxEnvironments">,
+  draft: SpaceSettingsDraft,
+): TrevizeSpacePatch | null {
+  const current = spaceSettingsDraft(space);
+  const name = draft.name.trim();
+  const instructions = draft.instructions.trim() ? draft.instructions : null;
+  const patch: { -readonly [K in keyof TrevizeSpacePatch]: TrevizeSpacePatch[K] } = {};
+  if (name && name !== current.name) patch.name = name;
+  if (draft.icon !== current.icon) patch.icon = draft.icon;
+  if (draft.color !== current.color) patch.color = draft.color;
+  if (instructions !== (current.instructions.trim() ? current.instructions : null)) {
+    patch.instructions = instructions;
+  }
+  if (draft.maxEnvironments !== current.maxEnvironments) {
+    patch.maxEnvironments = draft.maxEnvironments;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 /**

@@ -101,6 +101,10 @@ export const TrevizeSpace = Schema.Struct({
   workspaceId: Schema.String,
   name: Schema.String,
   description: Schema.optional(Schema.NullOr(Schema.String)),
+  /** A Lucide icon name or an emoji; absent on servers from before space icons. */
+  icon: Schema.optional(Schema.NullOr(Schema.String)),
+  /** `#rrggbb`; absent on servers from before space icons. */
+  color: Schema.optional(Schema.NullOr(Schema.String)),
   instructions: Schema.optional(Schema.NullOr(Schema.String)),
   repositoryIds: Schema.Array(Schema.String),
   orchestratorThreadId: Schema.NullOr(Schema.String),
@@ -555,6 +559,29 @@ export const createSpace = Effect.fn("clientRuntime.trevize.createSpace")(functi
             }
           : {}),
       }),
+    ),
+    TrevizeSpace,
+  );
+});
+
+/** Fields a space's settings can change; `null` resets `icon`, `color` and `instructions`. */
+export interface TrevizeSpacePatch {
+  readonly name?: string;
+  readonly icon?: string | null;
+  readonly color?: string | null;
+  readonly instructions?: string | null;
+  readonly maxEnvironments?: number;
+}
+
+export const updateSpace = Effect.fn("clientRuntime.trevize.updateSpace")(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+  patch: TrevizeSpacePatch,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.patch(apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}`)).pipe(
+      HttpClientRequest.bodyJsonUnsafe(patch),
     ),
     TrevizeSpace,
   );

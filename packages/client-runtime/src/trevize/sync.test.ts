@@ -174,6 +174,8 @@ interface Harness {
   readonly requests: Array<string>;
   /** Bodies of `POST /spaces`. */
   readonly createdSpaces: Array<unknown>;
+  /** Bodies of `PATCH /spaces/{id}`. */
+  readonly updatedSpaces: Array<unknown>;
   readonly pairings: Array<ConnectionOnboarding.PairingConnectionInput>;
   readonly removed: Array<EnvironmentId>;
   readonly retried: Array<EnvironmentId>;
@@ -216,6 +218,7 @@ const makeHarness = Effect.fn(function* (input: {
 }) {
   const requests: Array<string> = [];
   const createdSpaces: Array<unknown> = [];
+  const updatedSpaces: Array<unknown> = [];
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
   const removed: Array<EnvironmentId> = [];
   const retried: Array<EnvironmentId> = [];
@@ -287,6 +290,12 @@ const makeHarness = Effect.fn(function* (input: {
       createdSpaces.push(body);
       return Promise.resolve(Response.json(spaceJson("spc_new", body.name)));
     }
+    const patched = /^\/api\/v1\/spaces\/([^/]+)$/.exec(url.pathname);
+    if (patched?.[1] !== undefined && init.method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      updatedSpaces.push(body);
+      return Promise.resolve(Response.json({ ...spaceJson(patched[1], "Billing"), ...body }));
+    }
     if (url.pathname === "/api/v1/t3/threads" && input.threads !== undefined) {
       return Promise.resolve(Response.json({ threads: input.threads }));
     }
@@ -346,6 +355,7 @@ const makeHarness = Effect.fn(function* (input: {
     layer,
     requests,
     createdSpaces,
+    updatedSpaces,
     pairings,
     removed,
     retried,
@@ -612,6 +622,33 @@ describe("TrevizeCloudSync", () => {
         expect(harness.requests.filter((request) => request.includes("/spaces/spc_new"))).toEqual(
           [],
         );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("saves space settings and shows them before the next listing", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [spaceJson("spc_1", "Billing"), spaceJson("spc_2", "Docs")],
+        threads: [],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaces.length > 0);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const patch = { name: "Payments", icon: "🚀", color: "#6e56cf" };
+        yield* sync.updateSpace("spc_1", patch);
+        expect(harness.updatedSpaces).toEqual([patch]);
+        const updated = yield* SubscriptionRef.get(sync.state);
+        expect(
+          updated.spaces.map(({ id, name, icon, color }) => ({ id, name, icon, color })),
+        ).toEqual([
+          { id: "spc_1", name: "Payments", icon: "🚀", color: "#6e56cf" },
+          { id: "spc_2", name: "Docs", icon: undefined, color: undefined },
+        ]);
       }).pipe(Effect.provide(harness.layer));
     }),
   );
