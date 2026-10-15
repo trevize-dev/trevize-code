@@ -343,7 +343,7 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
     const result = yield* execute(
       config,
       HttpClientRequest.post(
-        apiUrl(config, `/t3/environments/${encodeURIComponent(environmentId)}/wake`),
+        apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/wake`),
       ),
       TrevizeWakeResult,
     ).pipe(
