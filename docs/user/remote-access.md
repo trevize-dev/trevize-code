@@ -32,7 +32,7 @@ disconnect an otherwise healthy conversation.
 
 ## Trevize Cloud
 
-Trevize runs T3 Code environments in cloud sandboxes with your repositories
+Trevize runs Trevize Code environments in cloud sandboxes with your repositories
 checked out, so agents keep working when your own machines are off. Open
 **Settings → Connections → Trevize Cloud** and sign in with a Trevize API key
 (`tvz_…`). If your team uses its own Trevize deployment, change the Trevize URL
