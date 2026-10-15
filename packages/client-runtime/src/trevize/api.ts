@@ -51,6 +51,8 @@ export const TrevizeEnvironment = Schema.Struct({
   workspaceId: Schema.String,
   title: Schema.NullOr(Schema.String),
   status: TrevizeEnvironmentStatus,
+  /** What runs in the sandbox, `"trevize-code"` today; absent on older servers. */
+  runtime: Schema.optional(Schema.String),
   repositoryIds: Schema.Array(Schema.String),
   httpBaseUrl: Schema.String,
   createdAt: Schema.String,
@@ -63,7 +65,7 @@ export const TrevizeEnvironment = Schema.Struct({
 export type TrevizeEnvironment = typeof TrevizeEnvironment.Type;
 
 /**
- * A thread Trevize launched in one of its environments (`GET /t3/threads`).
+ * A thread Trevize launched in one of its environments (`GET /threads`).
  * `environmentId` is the Trevize environment id, not the T3 server's.
  * Decoded tolerantly: kinds and statuses are open strings, and the live
  * thread status fields are optional until Trevize reports them.
@@ -74,7 +76,7 @@ export const TrevizeThread = Schema.Struct({
   environmentTitle: Schema.optional(Schema.NullOr(Schema.String)),
   environmentStatus: Schema.optional(Schema.NullOr(Schema.String)),
   workspaceId: Schema.optional(Schema.String),
-  t3ThreadId: Schema.String,
+  runtimeThreadId: Schema.String,
   title: Schema.optional(Schema.NullOr(Schema.String)),
   sourceKind: Schema.String,
   sourceRef: Schema.optional(Schema.NullOr(Schema.String)),
@@ -310,7 +312,7 @@ export const listEnvironments = Effect.fn("clientRuntime.trevize.listEnvironment
 ) {
   const body = yield* execute(
     config,
-    HttpClientRequest.get(apiUrl(config, "/t3/environments")).pipe(
+    HttpClientRequest.get(apiUrl(config, "/environments")).pipe(
       HttpClientRequest.setUrlParam("workspaceId", workspaceId),
     ),
     EnvironmentsResponse,
@@ -325,7 +327,7 @@ export const listMyThreads = Effect.fn("clientRuntime.trevize.listMyThreads")(fu
 ) {
   const body = yield* execute(
     config,
-    HttpClientRequest.get(apiUrl(config, "/t3/threads")).pipe(
+    HttpClientRequest.get(apiUrl(config, "/threads")).pipe(
       HttpClientRequest.setUrlParam("workspaceId", workspaceId),
       HttpClientRequest.setUrlParam("assignee", "me"),
     ),
@@ -345,7 +347,7 @@ export const createEnvironment = Effect.fn("clientRuntime.trevize.createEnvironm
   const title = input.title?.trim();
   return yield* execute(
     config,
-    HttpClientRequest.post(apiUrl(config, "/t3/environments")).pipe(
+    HttpClientRequest.post(apiUrl(config, "/environments")).pipe(
       HttpClientRequest.bodyJsonUnsafe({
         workspaceId: input.workspaceId,
         repositoryIds: input.repositoryIds,
@@ -363,7 +365,7 @@ export const stopEnvironment = Effect.fn("clientRuntime.trevize.stopEnvironment"
   return yield* execute(
     config,
     HttpClientRequest.post(
-      apiUrl(config, `/t3/environments/${encodeURIComponent(environmentId)}/stop`),
+      apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/stop`),
     ),
     TrevizeEnvironment,
   );
@@ -377,7 +379,7 @@ const requestConnect = Effect.fn("clientRuntime.trevize.requestConnect")(functio
   return yield* execute(
     config,
     HttpClientRequest.post(
-      apiUrl(config, `/t3/environments/${encodeURIComponent(environmentId)}/connect`),
+      apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/connect`),
     ),
     TrevizeConnectResult,
   );
@@ -445,7 +447,7 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
     const result = yield* execute(
       config,
       HttpClientRequest.post(
-        apiUrl(config, `/t3/environments/${encodeURIComponent(environmentId)}/wake`),
+        apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/wake`),
       ),
       TrevizeWakeResult,
     ).pipe(
