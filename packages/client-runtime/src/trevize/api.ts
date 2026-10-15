@@ -580,6 +580,29 @@ export const archiveSpace = Effect.fn("clientRuntime.trevize.archiveSpace")(func
   );
 });
 
+export interface TrevizeSpaceUpdate {
+  readonly name: string;
+}
+
+/**
+ * Renames a space. ASSUMPTION: `PATCH /spaces/{id}` with `{ name }` answers
+ * the updated space. The route is not in the public OpenAPI spec and has not
+ * been verified against a live workspace; correct it here if Trevize differs.
+ */
+export const updateSpace = Effect.fn("clientRuntime.trevize.updateSpace")(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+  update: TrevizeSpaceUpdate,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.patch(apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}`)).pipe(
+      HttpClientRequest.bodyJsonUnsafe({ name: update.name.trim() }),
+    ),
+    TrevizeSpace,
+  );
+});
+
 export interface TrevizeOrchestratorModel {
   /** A T3 provider driver kind, e.g. `codex`. */
   readonly provider: string;

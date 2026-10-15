@@ -32,6 +32,7 @@ import {
   listWorkspaceThreads,
   listWorkspaces,
   startOrchestratorWhenReady,
+  updateSpace as updateTrevizeSpace,
   type TrevizeApiConfig,
   type TrevizeEnvironment,
   type TrevizeOrchestratorModel,
@@ -250,6 +251,8 @@ export class TrevizeCloudSync extends Context.Service<
       model?: TrevizeOrchestratorModel | null,
     ) => Effect.Effect<void>;
     readonly archiveSpace: (spaceId: string) => Effect.Effect<void, TrevizeApiError>;
+    /** Renames a space; the state keeps the old name until Trevize confirms. */
+    readonly renameSpace: (spaceId: string, name: string) => Effect.Effect<void, TrevizeApiError>;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
@@ -694,6 +697,21 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     yield* syncNow;
   });
 
+  const renameSpace = Effect.fn("TrevizeCloudSync.renameSpace")(function* (
+    spaceId: string,
+    name: string,
+  ) {
+    const { config } = yield* requireConfig("rename this space");
+    const renamed = yield* updateTrevizeSpace(config, spaceId, { name }).pipe(
+      Effect.provideContext(context),
+    );
+    yield* SubscriptionRef.update(state, (current) => ({
+      ...current,
+      spaces: current.spaces.map((space) => (space.id === spaceId ? renamed : space)),
+    }));
+    yield* syncNow;
+  });
+
   // The one sync loop: runs at start, then on request or every interval.
   yield* Effect.gen(function* () {
     while (true) {
@@ -715,6 +733,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     createSpace,
     startOrchestrator,
     archiveSpace,
+    renameSpace,
   });
 });
 

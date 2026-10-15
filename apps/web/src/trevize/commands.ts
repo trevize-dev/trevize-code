@@ -166,3 +166,11 @@ export const archiveSpace = createRuntimeCommand(connectionAtomRuntime, {
   execute: (spaceId: string) =>
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.archiveSpace(spaceId))),
 });
+
+export const renameSpace = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:rename-space",
+  execute: (input: { readonly spaceId: string; readonly name: string }) =>
+    TrevizeSync.TrevizeCloudSync.pipe(
+      Effect.flatMap((sync) => sync.renameSpace(input.spaceId, input.name)),
+    ),
+});

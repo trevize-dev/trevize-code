@@ -6,13 +6,21 @@ import {
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { useNavigate } from "@tanstack/react-router";
-import { ArchiveIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { ArchiveIcon, MoreHorizontalIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
 import ChatView from "~/components/ChatView";
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import {
   Empty,
   EmptyContent,
@@ -487,8 +495,96 @@ function AgentPicker(props: {
   );
 }
 
+/** Mounts with the popup, so each open starts from the space's current name. */
+function RenameSpaceForm(props: {
+  readonly space: Space;
+  readonly pending: boolean;
+  readonly setPending: (pending: boolean) => void;
+  readonly close: () => void;
+}) {
+  const { space, pending, setPending, close } = props;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState(space.name);
+  const rename = useAtomCommand(Trevize.renameSpace, { reportFailure: false });
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => inputRef.current?.select());
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  const trimmed = name.trim();
+  const canSave = trimmed.length > 0 && trimmed !== space.name && !pending;
+
+  const submit = async () => {
+    if (!canSave) return;
+    setPending(true);
+    try {
+      const result = await rename({ spaceId: space.id, name: trimmed });
+      if (result._tag === "Success") {
+        close();
+        return;
+      }
+      reportFailure("Could not rename space", result);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Rename space</DialogTitle>
+      </DialogHeader>
+      <DialogPanel>
+        <Input
+          ref={inputRef}
+          aria-label="Space name"
+          value={name}
+          maxLength={120}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void submit();
+          }}
+        />
+      </DialogPanel>
+      <DialogFooter>
+        <Button type="button" variant="outline" size="sm" onClick={close} disabled={pending}>
+          Cancel
+        </Button>
+        <Button type="button" size="sm" onClick={() => void submit()} disabled={!canSave}>
+          {pending ? "Saving..." : "Save"}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function RenameSpaceDialog(props: {
+  readonly space: Space;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const { space, open, onOpenChange } = props;
+  const [pending, setPending] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
+      <DialogPopup className="max-w-md">
+        <RenameSpaceForm
+          space={space}
+          pending={pending}
+          setPending={setPending}
+          close={() => onOpenChange(false)}
+        />
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
 function SpaceMenu({ space }: { readonly space: Space }) {
   const navigate = useNavigate();
+  const [renaming, setRenaming] = useState(false);
   const archive = useAtomCommand(Trevize.archiveSpace, { reportFailure: false });
   const onArchive = async () => {
     const message = `Archive "${space.name}"?\nIts orchestrator and agents stop showing here. Trevize keeps their history.`;
@@ -503,20 +599,27 @@ function SpaceMenu({ space }: { readonly space: Space }) {
     reportFailure("Could not archive space", result);
   };
   return (
-    <Menu>
-      <MenuTrigger
-        render={
-          <Button size="icon-xs" variant="ghost-muted" aria-label={`${space.name} actions`} />
-        }
-      >
-        <MoreHorizontalIcon />
-      </MenuTrigger>
-      <MenuPopup align="end">
-        <MenuItem variant="destructive" onClick={() => void onArchive()}>
-          <ArchiveIcon />
-          Archive space…
-        </MenuItem>
-      </MenuPopup>
-    </Menu>
+    <>
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button size="icon-xs" variant="ghost-muted" aria-label={`${space.name} actions`} />
+          }
+        >
+          <MoreHorizontalIcon />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          <MenuItem onClick={() => setRenaming(true)}>
+            <PencilIcon />
+            Rename space…
+          </MenuItem>
+          <MenuItem variant="destructive" onClick={() => void onArchive()}>
+            <ArchiveIcon />
+            Archive space…
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+      <RenameSpaceDialog space={space} open={renaming} onOpenChange={setRenaming} />
+    </>
   );
 }

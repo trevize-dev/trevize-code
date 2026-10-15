@@ -212,7 +212,10 @@ const makeHarness = Effect.fn(function* (input: {
   /** Spaces of `ws_1`; absent answers 404 like a workspace without spaces. */
   readonly spaces?: ReadonlyArray<unknown>;
   readonly orchestrator?: Array<() => Response>;
+  /** Answers to `PATCH /spaces/{id}`; by default the rename succeeds and the listing follows. */
+  readonly rename?: Array<() => Response>;
 }) {
+  let spaces = input.spaces;
   const requests: Array<string> = [];
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
   const removed: Array<EnvironmentId> = [];
@@ -275,10 +278,23 @@ const makeHarness = Effect.fn(function* (input: {
     }
     if (url.pathname === "/api/v1/spaces" && (init.method ?? "GET") === "GET") {
       return Promise.resolve(
-        input.spaces === undefined
+        spaces === undefined
           ? Response.json({ message: "Not found" }, { status: 404 })
-          : Response.json({ spaces: input.spaces }),
+          : Response.json({ spaces }),
       );
+    }
+    const patched = /^\/api\/v1\/spaces\/([^/]+)$/.exec(url.pathname);
+    if (patched?.[1] !== undefined && init.method === "PATCH") {
+      const next = input.rename?.shift();
+      if (next !== undefined) return Promise.resolve(next());
+      const id = patched[1];
+      const body = JSON.parse(String(init.body));
+      spaces = spaces?.map((space) =>
+        typeof space === "object" && space !== null && "id" in space && space.id === id
+          ? { ...space, name: body.name }
+          : space,
+      );
+      return Promise.resolve(Response.json(spaceJson(id, body.name)));
     }
     if (url.pathname === "/api/v1/spaces") {
       const body = JSON.parse(String(init.body));
@@ -625,6 +641,54 @@ describe("TrevizeCloudSync", () => {
           "POST /api/v1/spaces/spc_new/orchestrator",
           "POST /api/v1/spaces/spc_new/orchestrator",
         ]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("renames a space and shows the new name after the next listing", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [spaceJson("spc_1", "Billing"), spaceJson("spc_2", "Docs")],
+        threads: [],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaces.length === 2);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        yield* sync.renameSpace("spc_1", "  Billing v2  ");
+        const renamed = yield* SubscriptionRef.get(sync.state);
+        expect(renamed.spaces.map((space) => [space.id, space.name])).toEqual([
+          ["spc_1", "Billing v2"],
+          ["spc_2", "Docs"],
+        ]);
+        expect(harness.requests.filter((request) => request.startsWith("PATCH"))).toEqual([
+          "PATCH /api/v1/spaces/spc_1",
+        ]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("keeps the old name when the rename fails", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [spaceJson("spc_1", "Billing")],
+        threads: [],
+        rename: [() => Response.json({ message: "Name taken" }, { status: 400 })],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaces.length === 1);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const error = yield* sync.renameSpace("spc_1", "Billing v2").pipe(Effect.flip);
+        const after = yield* SubscriptionRef.get(sync.state);
+        expect(error.message).toBe("Name taken");
+        expect(after.spaces.map((space) => space.name)).toEqual(["Billing"]);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

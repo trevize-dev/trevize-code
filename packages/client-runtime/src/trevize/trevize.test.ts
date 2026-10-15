@@ -530,6 +530,29 @@ describe("spaces", () => {
     }),
   );
 
+  it.effect("renames a space with a trimmed name and decodes the updated space", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const renamed = yield* TrevizeApi.updateSpace(config, "spc 1", { name: " Billing v2 " }).pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [() => Response.json({ ...spaceJson, name: "Billing v2" })]),
+        ),
+      );
+      const failed = yield* TrevizeApi.updateSpace(config, "spc_1", { name: "Billing v2" }).pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp([], [() => Response.json({ message: "Nope" }, { status: 403 })]),
+        ),
+      );
+
+      expect(renamed.name).toBe("Billing v2");
+      expect(calls.map((call) => [call.method, call.url, JSON.parse(call.body ?? "null")])).toEqual(
+        [["PATCH", "https://trevize.example.test/api/v1/spaces/spc%201", { name: "Billing v2" }]],
+      );
+      expect([failed.reason, failed.message]).toEqual(["unauthorized", "Nope"]);
+    }),
+  );
+
   it.effect("polls the orchestrator start while the space's environment provisions", () =>
     Effect.gen(function* () {
       const calls: Array<Call> = [];
