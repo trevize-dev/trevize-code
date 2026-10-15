@@ -250,8 +250,8 @@ describe("Trevize API client", () => {
 });
 
 describe("wakeWhenReady", () => {
-  const wakeUrl = "POST https://trevize.example.test/api/v1/t3/environments/env_1/wake";
-  const connectUrl = "POST https://trevize.example.test/api/v1/t3/environments/env_1/connect";
+  const wakeUrl = "POST https://trevize.example.test/api/v1/environments/env_1/wake";
+  const connectUrl = "POST https://trevize.example.test/api/v1/environments/env_1/connect";
 
   it.effect("polls wake until the environment runs, without minting a pairing token", () =>
     Effect.gen(function* () {
