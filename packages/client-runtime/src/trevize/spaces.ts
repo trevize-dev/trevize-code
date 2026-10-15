@@ -1,6 +1,8 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import type { EnvironmentId, RepositoryIdentity } from "@t3tools/contracts";
 
+import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import type { TrevizeEnvironment, TrevizeSpace, TrevizeThread } from "./api.ts";
+import { findSavedTrevizeEnvironment } from "./connect.ts";
 import { deriveMyTaskStatus, myTaskActivityAt } from "./myTasks.ts";
 
 /**
@@ -10,6 +12,25 @@ import { deriveMyTaskStatus, myTaskActivityAt } from "./myTasks.ts";
  */
 
 export const MAX_SPACE_ENVIRONMENTS = 32;
+
+/**
+ * The saved (T3) environment ids of Trevize environments that run for a space.
+ * Their threads are a space's orchestrator and agents, so the native thread
+ * lists leave them to the space instead of listing them as regular threads.
+ */
+export function spaceEnvironmentIds(
+  environments: ReadonlyArray<Pick<TrevizeEnvironment, "httpBaseUrl" | "spaceId">>,
+  saved: Iterable<ConnectionCatalogEntry>,
+): ReadonlySet<EnvironmentId> {
+  const entries = [...saved];
+  const ids = new Set<EnvironmentId>();
+  for (const environment of environments) {
+    if (!environment.spaceId) continue;
+    const environmentId = findSavedTrevizeEnvironment(entries, environment.httpBaseUrl);
+    if (environmentId !== null) ids.add(environmentId);
+  }
+  return ids;
+}
 export const DEFAULT_SPACE_ENVIRONMENTS = 4;
 
 /** Every thread of a space, the orchestrator included, in listing order. */

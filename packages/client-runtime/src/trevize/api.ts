@@ -320,27 +320,6 @@ export const listEnvironments = Effect.fn("clientRuntime.trevize.listEnvironment
   return body.environments;
 });
 
-/**
- * Threads assigned to the API key's user in one workspace, newest first. Only
- * one-off tasks: threads of space environments (a space's orchestrator and the
- * workers it spawns) belong to the space, not to "My tasks".
- */
-export const listMyThreads = Effect.fn("clientRuntime.trevize.listMyThreads")(function* (
-  config: TrevizeApiConfig,
-  workspaceId: string,
-) {
-  const body = yield* execute(
-    config,
-    HttpClientRequest.get(apiUrl(config, "/threads")).pipe(
-      HttpClientRequest.setUrlParam("workspaceId", workspaceId),
-      HttpClientRequest.setUrlParam("assignee", "me"),
-      HttpClientRequest.setUrlParam("spaceId", "none"),
-    ),
-    ThreadsResponse,
-  );
-  return body.threads;
-});
-
 export const createEnvironment = Effect.fn("clientRuntime.trevize.createEnvironment")(function* (
   config: TrevizeApiConfig,
   input: {

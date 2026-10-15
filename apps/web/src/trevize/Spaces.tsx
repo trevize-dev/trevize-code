@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { TrevizeMyTasks, TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
 import { useMemo } from "react";
@@ -18,6 +19,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { cn } from "~/lib/utils";
 import { formatRelativeTime } from "~/timestampFormat";
+import { useEnvironments } from "~/state/environments";
 import * as Trevize from "./commands";
 
 const SPACES_EXPANDED_STORAGE_KEY = "t3code:trevize:spaces-expanded:v1";
@@ -35,6 +37,24 @@ export interface SpacesState {
   readonly spaceStartErrors: ReadonlyMap<string, string>;
   /** Whether the sync loop has listed Trevize at least once. */
   readonly loaded: boolean;
+}
+
+/**
+ * Saved environment ids that run for a space. The native thread lists filter
+ * them out: a space's orchestrator and agents live in the space, not in the
+ * regular thread list.
+ */
+export function useSpaceEnvironmentIds(): ReadonlySet<EnvironmentId> {
+  const trevizeEnvironments = useAtomValue(Trevize.syncStateValueAtom).environments;
+  const { environments: saved } = useEnvironments();
+  return useMemo(
+    () =>
+      TrevizeSpaces.spaceEnvironmentIds(
+        trevizeEnvironments,
+        saved.map((environment) => environment.entry),
+      ),
+    [saved, trevizeEnvironments],
+  );
 }
 
 /** Spaces from the Trevize Cloud sync loop. */

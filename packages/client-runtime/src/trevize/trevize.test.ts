@@ -98,7 +98,7 @@ describe("Trevize API client", () => {
     }),
   );
 
-  it.effect("lists my threads and decodes them tolerantly", () =>
+  it.effect("lists workspace threads and decodes them tolerantly", () =>
     Effect.gen(function* () {
       const calls: Array<Call> = [];
       // The shape Trevize answers today, plus a row from a newer Trevize.
@@ -130,7 +130,7 @@ describe("Trevize API client", () => {
         status: "running",
         pendingRuntimeRequest: { kind: "approval" },
       };
-      const threads = yield* TrevizeApi.listMyThreads(config, "ws_1").pipe(
+      const threads = yield* TrevizeApi.listWorkspaceThreads(config, "ws_1").pipe(
         Effect.provide(
           layerTrevizeHttp(calls, [() => Response.json({ threads: [current, newer] })]),
         ),
@@ -141,15 +141,13 @@ describe("Trevize API client", () => {
         ["thr_2", undefined, "running"],
       ]);
       expect(threads[1]?.pendingRuntimeRequest).toEqual({ kind: "approval" });
-      expect(calls[0]?.url).toBe(
-        "https://trevize.example.test/api/v1/threads?workspaceId=ws_1&assignee=me&spaceId=none",
-      );
+      expect(calls[0]?.url).toBe("https://trevize.example.test/api/v1/threads?workspaceId=ws_1");
     }),
   );
 
   it.effect("fails to decode a thread without its T3 thread id", () =>
     Effect.gen(function* () {
-      const error = yield* TrevizeApi.listMyThreads(config, "ws_1").pipe(
+      const error = yield* TrevizeApi.listWorkspaceThreads(config, "ws_1").pipe(
         Effect.flip,
         Effect.provide(
           layerTrevizeHttp(
