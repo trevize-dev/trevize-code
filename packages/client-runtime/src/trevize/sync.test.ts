@@ -538,14 +538,14 @@ describe("TrevizeCloudSync", () => {
           {
             id: "thr_orch",
             environmentId: "env_space",
-            t3ThreadId: "t3-orch",
+            runtimeThreadId: "t3-orch",
             sourceKind: "orchestrator",
             createdAt: "2026-10-01T00:00:00.000Z",
           },
           {
             id: "thr_plain",
             environmentId: "env_plain",
-            t3ThreadId: "t3-plain",
+            runtimeThreadId: "t3-plain",
             sourceKind: "linear",
             createdAt: "2026-10-01T00:00:00.000Z",
           },
@@ -562,7 +562,7 @@ describe("TrevizeCloudSync", () => {
           threads: state.spaceThreads.map((thread) => thread.id),
         })),
       ).toEqual(Option.some({ workspaces: ["ws_1"], spaces: ["spc_1"], threads: ["thr_orch"] }));
-      expect(harness.requests).toContain("GET /api/v1/t3/threads?workspaceId=ws_1");
+      expect(harness.requests).toContain("GET /api/v1/threads?workspaceId=ws_1");
     }),
   );
 
@@ -576,7 +576,7 @@ describe("TrevizeCloudSync", () => {
         Option.some([[], []]),
       );
       // Threads are only listed for workspaces with spaces.
-      expect(harness.requests).not.toContain("GET /api/v1/t3/threads?workspaceId=ws_1");
+      expect(harness.requests).not.toContain("GET /api/v1/threads?workspaceId=ws_1");
     }),
   );
 

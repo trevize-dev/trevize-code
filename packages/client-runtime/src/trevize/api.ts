@@ -499,7 +499,7 @@ export const listWorkspaceThreads = Effect.fn("clientRuntime.trevize.listWorkspa
   function* (config: TrevizeApiConfig, workspaceId: string) {
     const body = yield* execute(
       config,
-      HttpClientRequest.get(apiUrl(config, "/t3/threads")).pipe(
+      HttpClientRequest.get(apiUrl(config, "/threads")).pipe(
         HttpClientRequest.setUrlParam("workspaceId", workspaceId),
       ),
       ThreadsResponse,
@@ -510,7 +510,7 @@ export const listWorkspaceThreads = Effect.fn("clientRuntime.trevize.listWorkspa
 
 /**
  * The workspace's spaces, or none when spaces are unavailable to it: Trevize
- * answers 404 unless the workspace has the `t3` flag, and older servers do
+ * answers 404 unless the workspace has the `environments` flag, and older servers do
  * not know the route at all.
  */
 export const listSpaces = Effect.fn("clientRuntime.trevize.listSpaces")(function* (

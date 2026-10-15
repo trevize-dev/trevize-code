@@ -18,7 +18,7 @@ function thread(id: string, overrides: Partial<TrevizeThread> = {}): TrevizeThre
   return {
     id,
     environmentId: "env_space",
-    t3ThreadId: `t3-${id}`,
+    runtimeThreadId: `t3-${id}`,
     sourceKind: "orchestrator",
     createdAt: "2026-10-01T00:00:00.000Z",
     ...overrides,
