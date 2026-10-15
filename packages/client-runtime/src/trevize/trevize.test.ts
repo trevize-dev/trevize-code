@@ -142,7 +142,7 @@ describe("Trevize API client", () => {
       ]);
       expect(threads[1]?.pendingRuntimeRequest).toEqual({ kind: "approval" });
       expect(calls[0]?.url).toBe(
-        "https://trevize.example.test/api/v1/threads?workspaceId=ws_1&assignee=me",
+        "https://trevize.example.test/api/v1/threads?workspaceId=ws_1&assignee=me&spaceId=none",
       );
     }),
   );

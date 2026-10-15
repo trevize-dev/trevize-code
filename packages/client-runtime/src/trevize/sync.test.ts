@@ -495,7 +495,9 @@ describe("TrevizeCloudSync", () => {
         const synced = yield* awaitState((state) => state.lastSyncedAt !== null);
         const task = Option.getOrThrow(synced).myTasks[0];
         expect(task?.id).toBe("thr_1");
-        expect(harness.requests).toContain("GET /api/v1/threads?workspaceId=ws_1&assignee=me");
+        expect(harness.requests).toContain(
+          "GET /api/v1/threads?workspaceId=ws_1&assignee=me&spaceId=none",
+        );
         if (task === undefined) return;
 
         const sync = yield* TrevizeSync.TrevizeCloudSync;
