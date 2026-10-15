@@ -195,7 +195,7 @@ describe("learned routes", () => {
   });
 
   it("learns nothing for a route that opts out, and drops routes learned before", () => {
-    const gateway = direct("gateway", "https://t3-env.gw.example.test/");
+    const gateway = direct("gateway", "https://env-env.gw.example.test/");
     const optedOut: ConnectionRoute = {
       ...gateway,
       profile: Option.some(
@@ -203,8 +203,8 @@ describe("learned routes", () => {
           connectionId: "gateway",
           environmentId: ENVIRONMENT_ID,
           label: "Desk",
-          httpBaseUrl: "https://t3-env.gw.example.test/",
-          wsBaseUrl: "wss://t3-env.gw.example.test/",
+          httpBaseUrl: "https://env-env.gw.example.test/",
+          wsBaseUrl: "wss://env-env.gw.example.test/",
           learnRoutes: false,
         }),
       ),
