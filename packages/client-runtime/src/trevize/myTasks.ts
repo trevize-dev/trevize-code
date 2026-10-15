@@ -117,7 +117,7 @@ export type MyTaskTarget =
  * environment's gateway origin like the rest of Trevize sync.
  */
 export function resolveMyTaskTarget(
-  task: Pick<TrevizeThread, "environmentId" | "t3ThreadId">,
+  task: Pick<TrevizeThread, "environmentId" | "runtimeThreadId">,
   environments: ReadonlyArray<TrevizeEnvironment>,
   saved: Iterable<ConnectionCatalogEntry>,
 ): MyTaskTarget {
@@ -128,7 +128,7 @@ export function resolveMyTaskTarget(
       reason: "Trevize no longer lists this task's environment.",
     };
   }
-  const threadId = task.t3ThreadId;
+  const threadId = task.runtimeThreadId;
   if (!isThreadId(threadId)) {
     return { _tag: "Unavailable", reason: "Trevize sent an invalid thread id." };
   }

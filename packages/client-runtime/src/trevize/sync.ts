@@ -230,7 +230,7 @@ export class TrevizeCloudSync extends Context.Service<
      * has not saved it yet.
      */
     readonly openTask: (
-      task: Pick<TrevizeThread, "environmentId" | "t3ThreadId">,
+      task: Pick<TrevizeThread, "environmentId" | "runtimeThreadId">,
     ) => Effect.Effect<
       { readonly environmentId: EnvironmentId; readonly threadId: ThreadId },
       TrevizeApiError
@@ -574,7 +574,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
   });
 
   const openTask = Effect.fn("TrevizeCloudSync.openTask")(function* (
-    task: Pick<TrevizeThread, "environmentId" | "t3ThreadId">,
+    task: Pick<TrevizeThread, "environmentId" | "runtimeThreadId">,
   ) {
     const current = yield* SubscriptionRef.get(state);
     const saved = (yield* SubscriptionRef.get(registry.entries)).values();
