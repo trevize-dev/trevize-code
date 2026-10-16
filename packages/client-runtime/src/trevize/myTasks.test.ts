@@ -5,12 +5,7 @@ import * as Option from "effect/Option";
 import { BearerConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
 import { BearerConnectionTarget } from "../connection/model.ts";
 import type { TrevizeEnvironment, TrevizeThread } from "./api.ts";
-import {
-  deriveMyTaskStatus,
-  mergeMyTasks,
-  myTaskSourceLabel,
-  resolveMyTaskTarget,
-} from "./myTasks.ts";
+import { deriveMyTaskStatus, myTaskSourceLabel, resolveMyTaskTarget } from "./myTasks.ts";
 
 function task(overrides: Partial<TrevizeThread> = {}): TrevizeThread {
   return {
@@ -102,24 +97,6 @@ describe("myTaskSourceLabel", () => {
     expect(myTaskSourceLabel({ sourceKind: "linear", sourceRef: " " })).toBe("Linear");
     expect(myTaskSourceLabel({ sourceKind: "api", sourceRef: null })).toBe("API");
     expect(myTaskSourceLabel({ sourceKind: "webhook" })).toBe("Webhook");
-  });
-});
-
-describe("mergeMyTasks", () => {
-  it("dedupes across workspaces and orders by latest activity", () => {
-    const older = task({ id: "a", createdAt: "2026-10-01T00:00:00.000Z" });
-    const updated = task({
-      id: "b",
-      createdAt: "2026-09-01T00:00:00.000Z",
-      updatedAt: "2026-10-03T00:00:00.000Z",
-    });
-    const newer = task({ id: "c", createdAt: "2026-10-02T00:00:00.000Z" });
-    expect(
-      mergeMyTasks([
-        [older, newer],
-        [updated, older],
-      ]).map((t) => t.id),
-    ).toEqual(["b", "c", "a"]);
   });
 });
 

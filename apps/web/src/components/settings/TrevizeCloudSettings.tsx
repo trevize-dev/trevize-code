@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { findSavedTrevizeEnvironment, TrevizeApi } from "@t3tools/client-runtime/trevize";
+import {
+  findSavedTrevizeEnvironment,
+  TrevizeApi,
+  type TrevizeDeviceSignIn,
+} from "@t3tools/client-runtime/trevize";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -9,9 +13,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { readLocalApi } from "~/localApi";
 import { useEnvironments } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "~/trevize/commands";
@@ -116,7 +121,7 @@ export function TrevizeCloudSettings() {
             size="xs"
             variant="ghost-muted"
             onClick={() => {
-              void signOut().then((result) => {
+              void signOut(config).then((result) => {
                 if (result._tag === "Success") setApiKey(null);
                 else reportFailure(result, "Could not sign out of Trevize");
               });
@@ -203,6 +208,16 @@ function TrevizeAutoConnectRow({
   );
 }
 
+type DeviceSignInState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "starting" }
+  | { readonly kind: "waiting"; readonly signIn: TrevizeDeviceSignIn };
+
+/**
+ * Signs in by approving a code on Trevize in the browser (the device grant the
+ * Trevize CLI uses), with a pasted API key as the fallback for a Trevize that
+ * does not support it yet.
+ */
 function TrevizeSignInForm({
   baseUrl,
   onSignedIn,
@@ -214,22 +229,75 @@ function TrevizeSignInForm({
   ) => void;
 }) {
   const signIn = useAtomCommand(Trevize.signIn, { reportFailure: false });
+  const startDeviceSignIn = useAtomCommand(Trevize.startDeviceSignIn, { reportFailure: false });
+  const completeDeviceSignIn = useAtomCommand(Trevize.completeDeviceSignIn, {
+    reportFailure: false,
+  });
   const [urlDraft, setUrlDraft] = useState(baseUrl);
   const [keyDraft, setKeyDraft] = useState("");
+  const [useApiKey, setUseApiKey] = useState(false);
+  const [device, setDevice] = useState<DeviceSignInState>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const pendingSignIn = useRef<AbortController | null>(null);
 
-  const submit = async () => {
-    let normalizedUrl: string;
+  // Stop polling when the form goes away.
+  useEffect(() => () => pendingSignIn.current?.abort(), []);
+
+  const normalizedUrl = (): string | null => {
     try {
-      normalizedUrl = TrevizeApi.normalizeTrevizeBaseUrl(
-        urlDraft.trim() || Trevize.defaultTrevizeBaseUrl(),
-      );
+      return TrevizeApi.normalizeTrevizeBaseUrl(urlDraft.trim() || Trevize.defaultTrevizeBaseUrl());
     } catch {
       setError("Enter a valid Trevize URL.");
+      return null;
+    }
+  };
+
+  const openApproval = (signIn: TrevizeDeviceSignIn) => {
+    void readLocalApi()?.shell.openExternal(signIn.verificationUrl);
+  };
+
+  const signInWithBrowser = async () => {
+    const url = normalizedUrl();
+    if (url === null) return;
+    setError(null);
+    setDevice({ kind: "starting" });
+    const started = await startDeviceSignIn(url);
+    if (started._tag !== "Success") {
+      setDevice({ kind: "idle" });
+      if (!isAtomCommandInterrupted(started)) {
+        setError(failureMessage(started, "Could not start signing in to Trevize."));
+      }
       return;
     }
-    const config = { baseUrl: normalizedUrl, apiKey: keyDraft.trim() };
+    const controller = new AbortController();
+    pendingSignIn.current = controller;
+    setDevice({ kind: "waiting", signIn: started.value });
+    openApproval(started.value);
+    const result = await completeDeviceSignIn({
+      signIn: started.value,
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
+    pendingSignIn.current = null;
+    setDevice({ kind: "idle" });
+    if (result._tag === "Success") {
+      onSignedIn(result.value.config, result.value.workspaces);
+    } else if (!isAtomCommandInterrupted(result)) {
+      setError(failureMessage(result, "Could not sign in to Trevize."));
+    }
+  };
+
+  const cancelDeviceSignIn = () => {
+    pendingSignIn.current?.abort();
+    pendingSignIn.current = null;
+    setDevice({ kind: "idle" });
+  };
+
+  const signInWithApiKey = async () => {
+    const url = normalizedUrl();
+    if (url === null) return;
+    const config = { baseUrl: url, apiKey: keyDraft.trim() };
     setSubmitting(true);
     setError(null);
     const result = await signIn(config);
@@ -242,21 +310,45 @@ function TrevizeSignInForm({
     }
   };
 
+  if (device.kind === "waiting") {
+    return (
+      <div className={ITEM_ROW_CLASSNAME}>
+        <div className="grid gap-3">
+          <p className="text-xs text-muted-foreground">
+            Approve this code in Trevize to finish signing in.
+          </p>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-lg tracking-widest">{device.signIn.userCode}</span>
+            <Spinner size="sm" />
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button size="xs" variant="ghost-muted" onClick={cancelDeviceSignIn}>
+              Cancel
+            </Button>
+            <Button size="xs" variant="outline" onClick={() => openApproval(device.signIn)}>
+              Open Trevize
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={ITEM_ROW_CLASSNAME}>
       <form
         className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          if (keyDraft.trim()) void submit();
+          if (!useApiKey) void signInWithBrowser();
+          else if (keyDraft.trim()) void signInWithApiKey();
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Run environments in Trevize cloud sandboxes and connect to them from here. Sign in with a
-          Trevize API key.
+          Run environments in Trevize cloud sandboxes and connect to them from here.
         </p>
-        <fieldset disabled={submitting} className="contents">
-          <div className="grid gap-3 sm:grid-cols-[16rem_1fr]">
+        <fieldset disabled={submitting || device.kind === "starting"} className="contents">
+          <div className={useApiKey ? "grid gap-3 sm:grid-cols-[16rem_1fr]" : "grid gap-3"}>
             <div className="grid gap-1.5">
               <Label htmlFor="trevize-base-url">Trevize URL</Label>
               <Input
@@ -268,25 +360,40 @@ function TrevizeSignInForm({
                 onChange={(event) => setUrlDraft(event.target.value)}
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="trevize-api-key">API key</Label>
-              <Input
-                id="trevize-api-key"
-                size="sm"
-                type="password"
-                autoComplete="off"
-                placeholder="tvz_…"
-                value={keyDraft}
-                onChange={(event) => setKeyDraft(event.target.value)}
-              />
-            </div>
+            {useApiKey ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor="trevize-api-key">API key</Label>
+                <Input
+                  id="trevize-api-key"
+                  size="sm"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="tvz_…"
+                  value={keyDraft}
+                  onChange={(event) => setKeyDraft(event.target.value)}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-destructive">{error}</p>
-            <Button type="submit" size="xs" disabled={!keyDraft.trim()}>
-              {submitting ? <Spinner size="sm" /> : null}
-              Sign in
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost-muted"
+                onClick={() => {
+                  setUseApiKey((current) => !current);
+                  setError(null);
+                }}
+              >
+                {useApiKey ? "Sign in with browser" : "Use an API key"}
+              </Button>
+              <Button type="submit" size="xs" disabled={useApiKey && !keyDraft.trim()}>
+                {submitting || device.kind === "starting" ? <Spinner size="sm" /> : null}
+                {useApiKey ? "Sign in" : "Sign in with Trevize"}
+              </Button>
+            </div>
           </div>
         </fieldset>
       </form>

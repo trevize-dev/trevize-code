@@ -1,8 +1,8 @@
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 /**
@@ -318,22 +318,6 @@ export const listEnvironments = Effect.fn("clientRuntime.trevize.listEnvironment
     EnvironmentsResponse,
   );
   return body.environments;
-});
-
-/** Threads assigned to the API key's user in one workspace, newest first. */
-export const listMyThreads = Effect.fn("clientRuntime.trevize.listMyThreads")(function* (
-  config: TrevizeApiConfig,
-  workspaceId: string,
-) {
-  const body = yield* execute(
-    config,
-    HttpClientRequest.get(apiUrl(config, "/threads")).pipe(
-      HttpClientRequest.setUrlParam("workspaceId", workspaceId),
-      HttpClientRequest.setUrlParam("assignee", "me"),
-    ),
-    ThreadsResponse,
-  );
-  return body.threads;
 });
 
 export const createEnvironment = Effect.fn("clientRuntime.trevize.createEnvironment")(function* (

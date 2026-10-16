@@ -27,7 +27,6 @@ import {
   createSpace as createTrevizeSpace,
   wakeWhenReady,
   listEnvironments,
-  listMyThreads,
   listSpaces,
   listWorkspaceThreads,
   listWorkspaces,
@@ -45,7 +44,7 @@ import {
   loadTrevizeApiKey,
   trevizeOrigin,
 } from "./connect.ts";
-import { mergeMyTasks, resolveMyTaskTarget } from "./myTasks.ts";
+import { resolveMyTaskTarget } from "./myTasks.ts";
 import { defaultSpaceWorkspaceId } from "./spaces.ts";
 
 /**
@@ -175,8 +174,6 @@ export interface TrevizeCloudSyncState {
   readonly sleeping: ReadonlyMap<EnvironmentId, TrevizeEnvironment>;
   /** Saved environments a wake is in flight for. */
   readonly waking: ReadonlySet<EnvironmentId>;
-  /** Threads assigned to the signed-in user across all workspaces ("My tasks"). */
-  readonly myTasks: ReadonlyArray<TrevizeThread>;
   /** Workspaces whose Trevize offers spaces; empty means spaces are unavailable. */
   readonly spaceWorkspaceIds: ReadonlyArray<string>;
   /** Live (not archived) spaces of those workspaces. */
@@ -197,7 +194,6 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   environments: [],
   sleeping: new Map(),
   waking: new Set(),
-  myTasks: [],
   spaceWorkspaceIds: [],
   spaces: [],
   spaceThreads: [],
@@ -225,7 +221,7 @@ export class TrevizeCloudSync extends Context.Service<
      */
     readonly wake: (environmentId: EnvironmentId) => Effect.Effect<void, TrevizeApiError>;
     /**
-     * Makes a "My tasks" thread openable on this device and returns its route:
+     * Makes a Trevize thread openable on this device and returns its route:
      * wakes its environment when it sleeps, or connects it when this device
      * has not saved it yet.
      */
@@ -360,20 +356,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       (workspace) => listEnvironments(config, workspace.id),
       { concurrency: 4 },
     )).flat();
-    // Tasks are best effort: an older Trevize without the endpoint, or one
-    // failed workspace, keeps the last list instead of failing the sync.
-    const myTasks = yield* Effect.forEach(
-      workspaces,
-      (workspace) => listMyThreads(config, workspace.id),
-      { concurrency: 4 },
-    ).pipe(
-      Effect.map((listings) => Option.some(mergeMyTasks(listings))),
-      Effect.catch((error) =>
-        Effect.logWarning("Could not list Trevize tasks.", { error }).pipe(
-          Effect.as(Option.none<ReadonlyArray<TrevizeThread>>()),
-        ),
-      ),
-    );
 
     // Spaces are best effort like tasks. A 404 means the workspace has no
     // spaces; its threads are only listed when it does.
@@ -500,7 +482,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       error: null,
       environments,
       sleeping,
-      myTasks: Option.getOrElse(myTasks, () => current.myTasks),
       ...Option.getOrElse(spaceListing, () => ({
         spaceWorkspaceIds: current.spaceWorkspaceIds,
         spaces: current.spaces,

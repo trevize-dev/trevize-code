@@ -34,9 +34,11 @@ disconnect an otherwise healthy conversation.
 
 Trevize runs Trevize Code environments in cloud sandboxes with your repositories
 checked out, so agents keep working when your own machines are off. Open
-**Settings → Connections → Trevize Cloud** and sign in with a Trevize API key
-(`tvz_…`). If your team uses its own Trevize deployment, change the Trevize URL
-before signing in.
+**Settings → Connections → Trevize Cloud** and choose **Sign in with Trevize**.
+Trevize opens in your browser; check that it shows the same code as T3 Code and
+approve it. If your team uses its own Trevize deployment, change the Trevize URL
+before signing in. **Use an API key** signs in with a Trevize API key (`tvz_…`)
+instead, for a Trevize that does not offer browser sign-in yet.
 
 Pick a workspace to see its environments. **New environment** starts a sandbox
 with the repositories you choose, each added as a project. With **Automatically
@@ -56,13 +58,12 @@ Trevize stops idle environments. A saved environment that is stopped shows as
 **Sleeping** and is not woken in the background. Opening one of its threads, or
 choosing **Wake**, starts it again, which can take a minute.
 
-Tasks assigned to you in Trevize, such as Linear issues delegated to an agent, are listed under **My tasks** at the top of the sidebar and in the command palette; opening one connects or wakes its environment first if needed.
-
-If your workspace has spaces enabled, **Spaces** appear above My tasks. A space is an orchestrator chat that plans work and hands it to agents, each in its own cloud environment, with a shared `/shared` folder they all read and write. Create one with **+** next to Spaces (or **New space** in the command palette): pick the GitHub projects to clone, instructions saved as `/shared/SPACE.md`, how many sandboxes may run at once, and the orchestrator's model. The orchestrator starts with the space's first sandbox, which can take a few minutes. In a space, the first tab is the orchestrator chat; **+** opens one of its agents in another tab, and the **Space** panel on the right shows the orchestrator's task list and the files in `/shared`. An amber dot next to a space means an agent is waiting on you. Archive a space from the **⋯** menu in its tab bar.
+If your workspace has spaces enabled, **Spaces** appear at the top of the sidebar. A space is an orchestrator chat that plans work and hands it to agents, each in its own cloud environment, with a shared `/shared` folder they all read and write. Create one with **+** next to Spaces (or **New space** in the command palette): pick the GitHub projects to clone, instructions saved as `/shared/SPACE.md`, how many sandboxes may run at once, and the orchestrator's model. The orchestrator starts with the space's first sandbox, which can take a few minutes. In a space, the first tab is the orchestrator chat; **+** opens one of its agents in another tab, and the **Space** panel on the right shows the orchestrator's task list and the files in `/shared`. Agents report back to the orchestrator chat as compact updates (finished, failed, waiting, or a pull request); click an agent's name in one to open its tab. An amber dot next to a space means an agent is waiting on you. Archive a space from the **⋯** menu in its tab bar. A space's orchestrator and agent threads stay in the space: they are not listed with your regular threads.
 
 Everyone in the workspace can connect to the same environment and sees the same
-threads. A stopped environment keeps its files; **Stop** stops one immediately. Signing out of Trevize Cloud forgets the API key on this
-device but keeps environments you already connected.
+threads. A stopped environment keeps its files; **Stop** stops one immediately. Signing out of Trevize Cloud ends a browser sign-in's
+Trevize session and forgets the credential on this device, but keeps
+environments you already connected.
 
 ## Pair over a LAN or private network
 
