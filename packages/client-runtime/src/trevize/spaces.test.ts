@@ -9,7 +9,9 @@ import {
   closeSpaceTab,
   defaultSpaceWorkspaceId,
   githubRepositorySlug,
+  normalizeSpaceColor,
   openSpaceTab,
+  parseSpaceIcon,
   spaceActivityAt,
   spaceAgents,
   spaceColorIndex,
@@ -17,6 +19,8 @@ import {
   spaceEnvironmentFailed,
   spaceInitials,
   spaceNeedsYou,
+  spaceSettingsDraft,
+  spaceSettingsPatch,
 } from "./spaces.ts";
 
 function thread(id: string, overrides: Partial<TrevizeThread> = {}): TrevizeThread {
@@ -194,5 +198,70 @@ describe("spaceEnvironmentFailed", () => {
     ] as const;
     expect(spaceEnvironmentFailed("spc_1", environments)).toBe(false);
     expect(spaceEnvironmentFailed("spc_2", environments)).toBe(true);
+  });
+});
+
+describe("parseSpaceIcon", () => {
+  it("reads kebab-case names as Lucide icons and anything else as an emoji", () => {
+    expect(parseSpaceIcon("rocket")).toEqual({ kind: "icon", name: "rocket" });
+    expect(parseSpaceIcon("git-branch")).toEqual({ kind: "icon", name: "git-branch" });
+    expect(parseSpaceIcon("👩‍💻")).toEqual({ kind: "emoji", emoji: "👩‍💻" });
+    expect(parseSpaceIcon(null)).toBeNull();
+    expect(parseSpaceIcon("  ")).toBeNull();
+  });
+});
+
+describe("normalizeSpaceColor", () => {
+  it("keeps six-digit hex colors, lowercased", () => {
+    expect(normalizeSpaceColor("#6E56CF")).toBe("#6e56cf");
+    expect(normalizeSpaceColor("red")).toBeNull();
+    expect(normalizeSpaceColor(undefined)).toBeNull();
+  });
+});
+
+describe("spaceSettingsPatch", () => {
+  const settings = {
+    name: "Billing",
+    icon: null,
+    color: null,
+    instructions: "Ship small PRs.",
+    maxEnvironments: 4,
+  };
+
+  it("is null when nothing changed", () => {
+    expect(spaceSettingsPatch(settings, spaceSettingsDraft(settings))).toBeNull();
+    expect(
+      spaceSettingsPatch(settings, { ...spaceSettingsDraft(settings), name: "  Billing " }),
+    ).toBeNull();
+  });
+
+  it("sends only the changed fields", () => {
+    expect(
+      spaceSettingsPatch(settings, {
+        ...spaceSettingsDraft(settings),
+        name: " Payments ",
+        icon: "rocket",
+        color: "#6e56cf",
+      }),
+    ).toEqual({ name: "Payments", icon: "rocket", color: "#6e56cf" });
+    expect(
+      spaceSettingsPatch(settings, { ...spaceSettingsDraft(settings), maxEnvironments: 8 }),
+    ).toEqual({ maxEnvironments: 8 });
+  });
+
+  it("clears blank instructions and resets the icon with null", () => {
+    const styled = { ...settings, icon: "🚀", color: "#6e56cf" };
+    expect(
+      spaceSettingsPatch(styled, {
+        ...spaceSettingsDraft(styled),
+        icon: null,
+        color: null,
+        instructions: "  ",
+      }),
+    ).toEqual({ icon: null, color: null, instructions: null });
+  });
+
+  it("never sends a blank name", () => {
+    expect(spaceSettingsPatch(settings, { ...spaceSettingsDraft(settings), name: " " })).toBeNull();
   });
 });

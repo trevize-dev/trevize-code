@@ -1,12 +1,11 @@
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-  type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { useNavigate } from "@tanstack/react-router";
-import { ArchiveIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { ArchiveIcon, MoreHorizontalIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
@@ -26,8 +25,6 @@ import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { Spinner } from "~/components/ui/spinner";
-import { toastManager } from "~/components/ui/toast";
-import { requestConfirmDialog } from "~/confirmDialog";
 import { isElectron } from "~/env";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -38,6 +35,7 @@ import { useEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "./commands";
 import { savedThreadRef, useSpaceThreadTarget } from "./SpacePanel";
+import { openSpaceSettings, useArchiveSpace } from "./SpaceSettingsDialog";
 import {
   SpaceBadge,
   ThreadStatusDot,
@@ -55,16 +53,6 @@ const spaceTabsStorageKey = (spaceId: string) => `t3code:trevize:space-tabs:v1:$
 
 /** Threads whose space panel this session already opened, so closing it sticks. */
 const spacePanelOpened = new Set<string>();
-
-function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>) {
-  if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-  const error = squashAtomCommandFailure(result);
-  toastManager.add({
-    type: "error",
-    title,
-    description: error instanceof Error ? error.message : "Trevize did not answer.",
-  });
-}
 
 /**
  * A space: its orchestrator chat as the first tab, then agent threads the
@@ -468,20 +456,7 @@ function AgentPicker(props: {
 }
 
 function SpaceMenu({ space }: { readonly space: Space }) {
-  const navigate = useNavigate();
-  const archive = useAtomCommand(Trevize.archiveSpace, { reportFailure: false });
-  const onArchive = async () => {
-    const message = `Archive "${space.name}"?\nIts orchestrator and agents stop showing here. Trevize keeps their history.`;
-    const confirmed =
-      (await requestConfirmDialog(message, { variant: "destructive" })) ?? window.confirm(message);
-    if (!confirmed) return;
-    const result = await archive(space.id);
-    if (result._tag === "Success") {
-      await navigate({ to: "/" });
-      return;
-    }
-    reportFailure("Could not archive space", result);
-  };
+  const archive = useArchiveSpace();
   return (
     <Menu>
       <MenuTrigger
@@ -492,7 +467,11 @@ function SpaceMenu({ space }: { readonly space: Space }) {
         <MoreHorizontalIcon />
       </MenuTrigger>
       <MenuPopup align="end">
-        <MenuItem variant="destructive" onClick={() => void onArchive()}>
+        <MenuItem onClick={() => openSpaceSettings(space.id)}>
+          <SettingsIcon />
+          Space settings…
+        </MenuItem>
+        <MenuItem variant="destructive" onClick={() => void archive(space)}>
           <ArchiveIcon />
           Archive space…
         </MenuItem>

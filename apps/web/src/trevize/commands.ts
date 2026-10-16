@@ -194,6 +194,15 @@ export const createSpace = createRuntimeCommand(connectionAtomRuntime, {
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.createSpace(input))),
 });
 
+/** Saves a space's name, icon, color, instructions or sandbox limit. */
+export const updateSpace = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:update-space",
+  execute: (input: { readonly spaceId: string; readonly patch: TrevizeApi.TrevizeSpacePatch }) =>
+    TrevizeSync.TrevizeCloudSync.pipe(
+      Effect.flatMap((sync) => sync.updateSpace(input.spaceId, input.patch)),
+    ),
+});
+
 export const archiveSpace = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:archive-space",
   execute: (spaceId: string) =>

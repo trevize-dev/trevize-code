@@ -111,6 +111,7 @@ import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
+import { openSpaceSettings } from "../trevize/SpaceSettingsDialog";
 import { SpaceBadge, openNewSpaceDialog, useSpaces } from "../trevize/Spaces";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -2272,6 +2273,32 @@ function OpenCommandPaletteDialog(props: {
               icon: <SpaceBadge space={space} />,
               run: async () => {
                 await navigate({ to: "/spaces/$spaceId", params: { spaceId: space.id } });
+              },
+            })),
+          },
+        ],
+      });
+    }
+    if (spaces.length > 0) {
+      actionItems.push({
+        kind: "submenu",
+        value: "action:space-settings",
+        searchTerms: ["space settings", "rename space", "space icon", "space color", "space"],
+        title: "Space settings",
+        icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
+        addonIcon: <SettingsIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "space-settings",
+            label: "Spaces",
+            items: spaces.map((space) => ({
+              kind: "action",
+              value: `space-settings:${space.id}`,
+              title: space.name,
+              searchTerms: [space.name, "space settings"],
+              icon: <SpaceBadge space={space} />,
+              run: async () => {
+                openSpaceSettings(space.id);
               },
             })),
           },
