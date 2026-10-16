@@ -53,7 +53,7 @@ describe("resolveRemoteOpenState", () => {
   it("offers no deep links for a gateway-only environment", () => {
     expect(
       resolveRemoteOpenState({
-        target: primaryTarget("https://t3-env.gw.example.test"),
+        target: primaryTarget("https://env-env.gw.example.test"),
         sshAlias: null,
         isDesktopRenderer: false,
         remoteOpenTargets: TAILSCALE_TARGETS,

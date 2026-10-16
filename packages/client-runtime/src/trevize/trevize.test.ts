@@ -53,8 +53,9 @@ const environmentJson = {
   workspaceId: "ws_1",
   title: "Checkout revamp",
   status: "running",
+  runtime: "trevize-code",
   repositoryIds: ["acme/web"],
-  httpBaseUrl: "https://t3-env_1.gw.example.test",
+  httpBaseUrl: "https://env-env_1.gw.example.test",
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
   lastActivityAt: null,
@@ -63,8 +64,8 @@ const environmentJson = {
 
 const readyJson = {
   status: "ready",
-  httpBaseUrl: "https://t3-env_1.gw.example.test",
-  wsBaseUrl: "wss://t3-env_1.gw.example.test",
+  httpBaseUrl: "https://env-env_1.gw.example.test",
+  wsBaseUrl: "wss://env-env_1.gw.example.test",
   pairingToken: "pairing-token",
   pairingUrl: "https://app.t3.codes/pair?host=x#token=pairing-token",
   expiresAt: "2026-10-01T00:10:00.000Z",
@@ -87,7 +88,7 @@ describe("Trevize API client", () => {
       expect(calls).toEqual([
         {
           method: "GET",
-          url: "https://trevize.example.test/api/v1/t3/environments?workspaceId=ws+1",
+          url: "https://trevize.example.test/api/v1/environments?workspaceId=ws+1",
           authorization: "Bearer tvz_test",
           body: null,
           // No `traceparent`/`b3`: Trevize's CORS preflight rejects them.
@@ -97,7 +98,7 @@ describe("Trevize API client", () => {
     }),
   );
 
-  it.effect("lists my threads and decodes them tolerantly", () =>
+  it.effect("lists workspace threads and decodes them tolerantly", () =>
     Effect.gen(function* () {
       const calls: Array<Call> = [];
       // The shape Trevize answers today, plus a row from a newer Trevize.
@@ -107,8 +108,8 @@ describe("Trevize API client", () => {
         environmentTitle: "Checkout revamp",
         environmentStatus: "stopped",
         workspaceId: "ws_1",
-        t3ThreadId: "t3-thread-1",
-        t3ProjectId: "t3-project-1",
+        runtimeThreadId: "t3-thread-1",
+        runtimeProjectId: "t3-project-1",
         title: null,
         sourceKind: "linear",
         sourceRef: "LIN-123",
@@ -116,20 +117,20 @@ describe("Trevize API client", () => {
         assigneeUserId: "user_1",
         createdByUserId: null,
         branch: "trevize/lin-123-abc",
-        deepLinkUrl: "https://t3-env_1.gw.example.test/env/t3-thread-1",
+        deepLinkUrl: "https://env-env_1.gw.example.test/env/t3-thread-1",
         createdAt: "2026-10-01T00:00:00.000Z",
       };
       const newer = {
         id: "thr_2",
         environmentId: "env_1",
-        t3ThreadId: "t3-thread-2",
+        runtimeThreadId: "t3-thread-2",
         sourceKind: "manual",
         createdAt: "2026-10-02T00:00:00.000Z",
         updatedAt: "2026-10-03T00:00:00.000Z",
         status: "running",
         pendingRuntimeRequest: { kind: "approval" },
       };
-      const threads = yield* TrevizeApi.listMyThreads(config, "ws_1").pipe(
+      const threads = yield* TrevizeApi.listWorkspaceThreads(config, "ws_1").pipe(
         Effect.provide(
           layerTrevizeHttp(calls, [() => Response.json({ threads: [current, newer] })]),
         ),
@@ -140,15 +141,13 @@ describe("Trevize API client", () => {
         ["thr_2", undefined, "running"],
       ]);
       expect(threads[1]?.pendingRuntimeRequest).toEqual({ kind: "approval" });
-      expect(calls[0]?.url).toBe(
-        "https://trevize.example.test/api/v1/t3/threads?workspaceId=ws_1&assignee=me",
-      );
+      expect(calls[0]?.url).toBe("https://trevize.example.test/api/v1/threads?workspaceId=ws_1");
     }),
   );
 
   it.effect("fails to decode a thread without its T3 thread id", () =>
     Effect.gen(function* () {
-      const error = yield* TrevizeApi.listMyThreads(config, "ws_1").pipe(
+      const error = yield* TrevizeApi.listWorkspaceThreads(config, "ws_1").pipe(
         Effect.flip,
         Effect.provide(
           layerTrevizeHttp(
@@ -262,7 +261,7 @@ describe("Trevize API client", () => {
       expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual(
         Array.from(
           { length: 3 },
-          () => "POST https://trevize.example.test/api/v1/t3/environments/env_1/connect",
+          () => "POST https://trevize.example.test/api/v1/environments/env_1/connect",
         ),
       );
     }),
@@ -318,8 +317,8 @@ describe("Trevize API client", () => {
 });
 
 describe("wakeWhenReady", () => {
-  const wakeUrl = "POST https://trevize.example.test/api/v1/t3/environments/env_1/wake";
-  const connectUrl = "POST https://trevize.example.test/api/v1/t3/environments/env_1/connect";
+  const wakeUrl = "POST https://trevize.example.test/api/v1/environments/env_1/wake";
+  const connectUrl = "POST https://trevize.example.test/api/v1/environments/env_1/connect";
 
   it.effect("polls wake until the environment runs, without minting a pairing token", () =>
     Effect.gen(function* () {
@@ -410,7 +409,7 @@ describe("connectTrevizeEnvironment", () => {
       expect(environmentId).toBe("t3-environment");
       expect(pairings).toEqual([
         {
-          host: "https://t3-env_1.gw.example.test",
+          host: "https://env-env_1.gw.example.test",
           pairingCode: "pairing-token",
           label: "Checkout revamp",
           // Only the gateway reaches the sandbox, never its container addresses.
@@ -434,15 +433,15 @@ describe("findSavedTrevizeEnvironment", () => {
         target: new BearerConnectionTarget({
           environmentId,
           label: "Checkout revamp",
-          connectionId: "bearer:t3-environment:https://t3-env_1.gw.example.test",
+          connectionId: "bearer:t3-environment:https://env-env_1.gw.example.test",
         }),
         profile: Option.some(
           new BearerConnectionProfile({
-            connectionId: "bearer:t3-environment:https://t3-env_1.gw.example.test",
+            connectionId: "bearer:t3-environment:https://env-env_1.gw.example.test",
             environmentId,
             label: "Checkout revamp",
-            httpBaseUrl: "https://t3-env_1.gw.example.test/",
-            wsBaseUrl: "wss://t3-env_1.gw.example.test/",
+            httpBaseUrl: "https://env-env_1.gw.example.test/",
+            wsBaseUrl: "wss://env-env_1.gw.example.test/",
           }),
         ),
       },
@@ -451,10 +450,10 @@ describe("findSavedTrevizeEnvironment", () => {
   };
 
   it("matches a saved route by gateway origin", () => {
-    expect(findSavedTrevizeEnvironment([bearerEntry], "https://t3-env_1.gw.example.test")).toBe(
+    expect(findSavedTrevizeEnvironment([bearerEntry], "https://env-env_1.gw.example.test")).toBe(
       environmentId,
     );
-    expect(findSavedTrevizeEnvironment([bearerEntry], "https://t3-env_2.gw.example.test")).toBe(
+    expect(findSavedTrevizeEnvironment([bearerEntry], "https://env-env_2.gw.example.test")).toBe(
       null,
     );
   });

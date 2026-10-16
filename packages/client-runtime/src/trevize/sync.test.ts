@@ -41,7 +41,7 @@ function trevizeEnvironment(
     title: id,
     status,
     repositoryIds: [],
-    httpBaseUrl: `https://t3-${id}.gw.example.test`,
+    httpBaseUrl: `https://env-${id}.gw.example.test`,
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
     lastActivityAt: null,
@@ -50,7 +50,7 @@ function trevizeEnvironment(
 }
 
 function origin(id: string) {
-  return `https://t3-${id}.gw.example.test`;
+  return `https://env-${id}.gw.example.test`;
 }
 
 function savedEntry(environmentId: EnvironmentId, httpBaseUrl: string): ConnectionCatalogEntry {
@@ -269,10 +269,10 @@ const makeHarness = Effect.fn(function* (input: {
         Response.json({ items: [{ id: "ws_1", name: "Acme", slug: "acme" }] }),
       );
     }
-    if (url.pathname === "/api/v1/t3/environments") {
+    if (url.pathname === "/api/v1/environments") {
       return Promise.resolve(Response.json({ environments: input.environments }));
     }
-    if (/^\/api\/v1\/t3\/environments\/[^/]+\/wake$/.test(url.pathname)) {
+    if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
     }
     if (url.pathname === "/api/v1/spaces" && (init.method ?? "GET") === "GET") {
@@ -287,10 +287,10 @@ const makeHarness = Effect.fn(function* (input: {
       createdSpaces.push(body);
       return Promise.resolve(Response.json(spaceJson("spc_new", body.name)));
     }
-    if (url.pathname === "/api/v1/t3/threads" && input.threads !== undefined) {
+    if (url.pathname === "/api/v1/threads" && input.threads !== undefined) {
       return Promise.resolve(Response.json({ threads: input.threads }));
     }
-    const connect = /^\/api\/v1\/t3\/environments\/([^/]+)\/connect$/.exec(url.pathname);
+    const connect = /^\/api\/v1\/environments\/([^/]+)\/connect$/.exec(url.pathname);
     if (connect?.[1] !== undefined) {
       return Promise.resolve(Response.json(readyJson(connect[1])));
     }
@@ -421,8 +421,8 @@ describe("TrevizeCloudSync", () => {
         yield* sync.wake(T3_A);
         expect([...harness.paused]).toEqual([]);
 
-        expect(harness.requests).toContain("POST /api/v1/t3/environments/env_a/wake");
-        expect(harness.requests).not.toContain("POST /api/v1/t3/environments/env_a/connect");
+        expect(harness.requests).toContain("POST /api/v1/environments/env_a/wake");
+        expect(harness.requests).not.toContain("POST /api/v1/environments/env_a/connect");
         expect(harness.retried).toEqual([T3_A]);
         // The saved credential still works, so the pairing token is not redeemed.
         expect(harness.pairings).toEqual([]);
@@ -474,53 +474,23 @@ describe("TrevizeCloudSync", () => {
     }),
   );
 
-  it.effect("loads my tasks and opens one by connecting its environment", () =>
+  it.effect("opens a thread by connecting its environment", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         saved: [],
         environments: [trevizeEnvironment("env_a", "stopped")],
         managedOrigins: [],
-        threads: [
-          {
-            id: "thr_1",
-            environmentId: "env_a",
-            t3ThreadId: "t3-thread-1",
-            sourceKind: "linear",
-            createdAt: "2026-10-01T00:00:00.000Z",
-          },
-        ],
       });
+      const task = { environmentId: "env_a", runtimeThreadId: "t3-thread-1" };
 
       yield* Effect.gen(function* () {
-        const synced = yield* awaitState((state) => state.lastSyncedAt !== null);
-        const task = Option.getOrThrow(synced).myTasks[0];
-        expect(task?.id).toBe("thr_1");
-        expect(harness.requests).toContain("GET /api/v1/t3/threads?workspaceId=ws_1&assignee=me");
-        if (task === undefined) return;
-
+        yield* awaitState((state) => state.lastSyncedAt !== null);
         const sync = yield* TrevizeSync.TrevizeCloudSync;
         const route = yield* sync.openTask(task);
         // Opening wakes and pairs the unsaved environment, then routes by the T3 id.
         expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_a")]);
         expect(route).toEqual({ environmentId: "t3-paired-1", threadId: "t3-thread-1" });
       }).pipe(Effect.provide(harness.layer));
-    }),
-  );
-
-  it.effect("keeps syncing environments when Trevize cannot list tasks", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness({
-        saved: [],
-        environments: [trevizeEnvironment("env_a", "running")],
-        managedOrigins: [],
-      });
-
-      const synced = yield* awaitState((state) => state.lastSyncedAt !== null).pipe(
-        Effect.provide(harness.layer),
-      );
-      expect(Option.map(synced, (state) => [state.error, state.myTasks])).toEqual(
-        Option.some([null, []]),
-      );
     }),
   );
 
@@ -538,14 +508,14 @@ describe("TrevizeCloudSync", () => {
           {
             id: "thr_orch",
             environmentId: "env_space",
-            t3ThreadId: "t3-orch",
+            runtimeThreadId: "t3-orch",
             sourceKind: "orchestrator",
             createdAt: "2026-10-01T00:00:00.000Z",
           },
           {
             id: "thr_plain",
             environmentId: "env_plain",
-            t3ThreadId: "t3-plain",
+            runtimeThreadId: "t3-plain",
             sourceKind: "linear",
             createdAt: "2026-10-01T00:00:00.000Z",
           },
@@ -562,7 +532,7 @@ describe("TrevizeCloudSync", () => {
           threads: state.spaceThreads.map((thread) => thread.id),
         })),
       ).toEqual(Option.some({ workspaces: ["ws_1"], spaces: ["spc_1"], threads: ["thr_orch"] }));
-      expect(harness.requests).toContain("GET /api/v1/t3/threads?workspaceId=ws_1");
+      expect(harness.requests).toContain("GET /api/v1/threads?workspaceId=ws_1");
     }),
   );
 
@@ -576,7 +546,7 @@ describe("TrevizeCloudSync", () => {
         Option.some([[], []]),
       );
       // Threads are only listed for workspaces with spaces.
-      expect(harness.requests).not.toContain("GET /api/v1/t3/threads?workspaceId=ws_1");
+      expect(harness.requests).not.toContain("GET /api/v1/threads?workspaceId=ws_1");
     }),
   );
 

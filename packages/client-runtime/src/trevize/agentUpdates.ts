@@ -30,7 +30,9 @@ export const TrevizeAgentUpdatePayload = Schema.Struct({
   thread: Schema.Struct({
     id: Schema.String,
     environmentId: Schema.String,
-    t3ThreadId: Schema.String,
+    runtimeThreadId: Schema.optional(Schema.String),
+    /** Records Trevize wrote before renaming it to `runtimeThreadId`, still in thread history. */
+    t3ThreadId: Schema.optional(Schema.String),
     title: Schema.NullOr(Schema.String),
   }),
   event: TrevizeAgentUpdateEvent,
@@ -43,7 +45,12 @@ export type TrevizeAgentUpdatePayload = typeof TrevizeAgentUpdatePayload.Type;
 export interface TrevizeAgentUpdate {
   readonly contextId: string;
   readonly direction: TrevizeAgentUpdatePayload["direction"];
-  readonly thread: TrevizeAgentUpdatePayload["thread"];
+  readonly thread: {
+    readonly id: string;
+    readonly environmentId: string;
+    readonly runtimeThreadId: string;
+    readonly title: string | null;
+  };
   /** The other party's display title: its thread title, else the record label. */
   readonly title: string;
   readonly event: TrevizeAgentUpdateEvent;
@@ -77,10 +84,17 @@ export function decodeTrevizeAgentRecord(record: ComposerContextRecord): Trevize
   const decoded = decodePayload(record.payload);
   if (Option.isNone(decoded)) return null;
   const payload = decoded.value;
+  const runtimeThreadId = payload.thread.runtimeThreadId ?? payload.thread.t3ThreadId;
+  if (runtimeThreadId === undefined) return null;
   return {
     contextId: record.contextId,
     direction: payload.direction,
-    thread: payload.thread,
+    thread: {
+      id: payload.thread.id,
+      environmentId: payload.thread.environmentId,
+      runtimeThreadId,
+      title: payload.thread.title,
+    },
     title:
       nonBlank(payload.thread.title) ??
       nonBlank(record.label) ??
@@ -126,7 +140,7 @@ export type TrevizeAgentUpdateTarget =
     }
   | {
       readonly _tag: "OpenThread";
-      readonly thread: Pick<TrevizeThread, "id" | "environmentId" | "t3ThreadId">;
+      readonly thread: Pick<TrevizeThread, "id" | "environmentId" | "runtimeThreadId">;
     };
 
 export function trevizeAgentUpdateTarget(input: {
@@ -148,6 +162,10 @@ export function trevizeAgentUpdateTarget(input: {
   }
   return {
     _tag: "OpenThread",
-    thread: { id: thread.id, environmentId: thread.environmentId, t3ThreadId: thread.t3ThreadId },
+    thread: {
+      id: thread.id,
+      environmentId: thread.environmentId,
+      runtimeThreadId: thread.runtimeThreadId,
+    },
   };
 }
