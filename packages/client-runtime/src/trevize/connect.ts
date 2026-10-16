@@ -9,9 +9,11 @@ import { connectionRoutes } from "../connection/routes.ts";
 import { connectWhenReady, type TrevizeApiConfig, type TrevizeEnvironment } from "./api.ts";
 
 /**
- * The Trevize API key lives in the connection credential store (desktop secure
- * storage, the browser's connection catalog, the mobile keychain) under this
- * id. No route references it, so catalog route cleanup never drops it.
+ * The Trevize credential lives in the connection credential store (desktop
+ * secure storage, the browser's connection catalog, the mobile keychain) under
+ * this id. It is either a pasted API key or the session token a device sign-in
+ * returned; both are bearer tokens for the Trevize API. No route references it,
+ * so catalog route cleanup never drops it.
  */
 const TREVIZE_API_KEY_CREDENTIAL_ID = "trevize:api-key";
 
