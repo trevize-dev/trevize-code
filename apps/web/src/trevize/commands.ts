@@ -6,6 +6,10 @@ import {
   loadTrevizeApiKey,
   saveTrevizeApiKey,
   TrevizeSync,
+  awaitTrevizeDeviceSignIn,
+  revokeTrevizeSession,
+  startTrevizeDeviceSignIn,
+  type TrevizeDeviceSignIn,
 } from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -63,25 +67,61 @@ export const loadApiKey = createRuntimeCommand(connectionAtomRuntime, {
   execute: (_input: void) => loadTrevizeApiKey(),
 });
 
-/** Checks the key against Trevize before storing it, and returns the workspaces it can see. */
+/** Checks a credential against Trevize, stores it, and returns the workspaces it can see. */
+const signInWith = (config: TrevizeApi.TrevizeApiConfig) =>
+  TrevizeApi.listWorkspaces(config).pipe(
+    Effect.tap(() => saveTrevizeApiKey(config.apiKey)),
+    // The first sync must already use the URL just signed in to.
+    Effect.tap(() =>
+      Effect.sync(() =>
+        updateStoredTrevizeSettings((current) => ({ ...current, baseUrl: config.baseUrl })),
+      ),
+    ),
+    Effect.tap(() => requestSync),
+  );
+
+/** Signs in with a pasted API key. */
 export const signIn = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:sign-in",
-  execute: (config: TrevizeApi.TrevizeApiConfig) =>
-    TrevizeApi.listWorkspaces(config).pipe(
-      Effect.tap(() => saveTrevizeApiKey(config.apiKey)),
-      // The first sync must already use the URL just signed in to.
-      Effect.tap(() =>
-        Effect.sync(() =>
-          updateStoredTrevizeSettings((current) => ({ ...current, baseUrl: config.baseUrl })),
-        ),
+  execute: signInWith,
+});
+
+/** Asks Trevize for a code the user approves in their browser. */
+export const startDeviceSignIn = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:start-device-sign-in",
+  execute: (baseUrl: string) => startTrevizeDeviceSignIn(baseUrl),
+});
+
+/** Ends with an interrupt when `signal` aborts, e.g. on Cancel or unmount. */
+const abortedBy = (signal: AbortSignal) =>
+  Effect.callback<never>((resume) => {
+    const abort = () => resume(Effect.interrupt);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", abort));
+  });
+
+/** Waits for the user to approve the code, then signs in with the session it grants. */
+export const completeDeviceSignIn = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:complete-device-sign-in",
+  execute: (input: { readonly signIn: TrevizeDeviceSignIn; readonly signal: AbortSignal }) =>
+    awaitTrevizeDeviceSignIn(input.signIn).pipe(
+      Effect.raceFirst(abortedBy(input.signal)),
+      Effect.map((token) => ({ baseUrl: input.signIn.baseUrl, apiKey: token })),
+      Effect.flatMap((config) =>
+        signInWith(config).pipe(Effect.map((workspaces) => ({ config, workspaces }))),
       ),
-      Effect.tap(() => requestSync),
     ),
 });
 
+/** Forgets the credential, and ends the Trevize session when it came from a device sign-in. */
 export const signOut = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:sign-out",
-  execute: (_input: void) => clearTrevizeApiKey().pipe(Effect.tap(() => requestSync)),
+  execute: (config: TrevizeApi.TrevizeApiConfig) =>
+    revokeTrevizeSession(config.baseUrl, config.apiKey).pipe(
+      Effect.andThen(clearTrevizeApiKey()),
+      Effect.tap(() => requestSync),
+    ),
 });
 
 export const listWorkspaces = createRuntimeCommand(connectionAtomRuntime, {
