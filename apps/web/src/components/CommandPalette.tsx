@@ -58,6 +58,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   InboxIcon,
+  LayoutGridIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -113,6 +114,7 @@ import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { myTaskTitle, useMyTasks, useOpenMyTask } from "../trevize/MyTasks";
+import { SpaceBadge, openNewSpaceDialog, useSpaces } from "../trevize/Spaces";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
@@ -720,6 +722,7 @@ function OpenCommandPaletteDialog(props: {
   }
   const clientSettings = useClientSettings();
   const myTasks = useMyTasks();
+  const { available: spacesAvailable, spaces } = useSpaces();
   const { open: openMyTask } = useOpenMyTask();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
@@ -2283,6 +2286,46 @@ function OpenCommandPaletteDialog(props: {
           }),
         },
       ],
+    });
+  }
+
+  if (spacesAvailable) {
+    if (spaces.length > 0) {
+      actionItems.push({
+        kind: "submenu",
+        value: "action:open-space",
+        searchTerms: ["space", "spaces", "orchestrator", "trevize", "open space"],
+        title: "Open space",
+        icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+        addonIcon: <LayoutGridIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "spaces",
+            label: "Spaces",
+            items: spaces.map((space) => ({
+              kind: "action",
+              value: `space:${space.id}`,
+              title: space.name,
+              timestamp: space.updatedAt,
+              searchTerms: [space.name, "space"],
+              icon: <SpaceBadge space={space} />,
+              run: async () => {
+                await navigate({ to: "/spaces/$spaceId", params: { spaceId: space.id } });
+              },
+            })),
+          },
+        ],
+      });
+    }
+    actionItems.push({
+      kind: "action",
+      value: "action:new-space",
+      searchTerms: ["new space", "create space", "space", "orchestrator", "trevize"],
+      title: "New space",
+      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openNewSpaceDialog();
+      },
     });
   }
 

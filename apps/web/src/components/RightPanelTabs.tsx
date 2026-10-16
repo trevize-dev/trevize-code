@@ -22,6 +22,7 @@ import {
   FileDiff,
   Files,
   Globe2,
+  LayoutGridIcon,
   Plus,
   TerminalSquare,
 } from "lucide-react";
@@ -602,6 +603,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "space":
+      return "Space";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -685,6 +688,8 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    case "space":
+      return <LayoutGridIcon className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />

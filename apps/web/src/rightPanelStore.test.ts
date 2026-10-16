@@ -322,6 +322,23 @@ describe("rightPanelStore", () => {
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
   });
 
+  it("keeps one space surface per thread, opened automatically without a manual choice", () => {
+    const store = useRightPanelStore.getState();
+    const revision = store.getUserActionRevision(refA);
+    store.openSpace(refA, "spc_1", true);
+    expect(store.getUserActionRevision(refA)).toBe(revision);
+    store.openFile(refA, "/shared/SPACE.md");
+    store.openSpace(refA, "spc_2");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual(["file:/shared/SPACE.md", "space"]);
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "space",
+      kind: "space",
+      spaceId: "spc_2",
+    });
+  });
+
   it("drops the legacy singleton terminal surface during migration", () => {
     expect(
       migratePersistedRightPanelState({

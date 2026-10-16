@@ -152,6 +152,7 @@ import {
   Fragment,
   lazy,
   memo,
+  type ReactNode,
   type SetStateAction,
   Suspense,
   useCallback,
@@ -563,6 +564,7 @@ import {
 } from "../lib/attachmentUploadQueue";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
+import { SpacePanel } from "../trevize/SpacePanel";
 import { previewEnvironment } from "../state/preview";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -830,6 +832,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      /** Replaces the thread title row, e.g. with a space's tab bar. */
+      titleRow?: ReactNode;
       routeKind: "server";
       draftId?: never;
     }
@@ -839,6 +843,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      titleRow?: ReactNode;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1576,6 +1581,7 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    titleRow,
   } = props;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -11047,6 +11053,12 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "space" ? (
+      <SpacePanel
+        spaceId={renderedRightPanelSurface.spaceId}
+        fallbackEnvironmentId={activeThread.environmentId}
+        onOpenFile={(path) => useRightPanelStore.getState().openFile(activeThreadRef, path)}
+      />
     ) : renderedRightPanelSurface?.kind === "device" ? (
       <Suspense fallback={null}>
         <DevicePanel
@@ -11291,18 +11303,29 @@ export default function ChatView(props: ChatViewProps) {
           ) : null}
           {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
           {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
-          <ChatHeader
-            activeThreadEnvironmentId={activeThread.environmentId}
-            activeThreadId={activeThread.id}
-            isServerThread={isServerThread}
-            activeThreadTitle={activeThread.title}
-            activeProject={activeProject ?? null}
-            rightPanelOpen={inlineRightPanelOwnsTitleBar}
-            onNewThreadInProject={handleNewThreadInActiveProject}
-            {...(activeDraftLogicalProjectKey
-              ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
-              : {})}
-          />
+          {titleRow ? (
+            <div
+              className={cn(
+                "flex min-w-0 flex-1 items-center",
+                inlineRightPanelOwnsTitleBar ? "pr-10" : "pr-24",
+              )}
+            >
+              {titleRow}
+            </div>
+          ) : (
+            <ChatHeader
+              activeThreadEnvironmentId={activeThread.environmentId}
+              activeThreadId={activeThread.id}
+              isServerThread={isServerThread}
+              activeThreadTitle={activeThread.title}
+              activeProject={activeProject ?? null}
+              rightPanelOpen={inlineRightPanelOwnsTitleBar}
+              onNewThreadInProject={handleNewThreadInActiveProject}
+              {...(activeDraftLogicalProjectKey
+                ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
+                : {})}
+            />
+          )}
         </header>
 
         {/* Main content area with optional plan sidebar */}

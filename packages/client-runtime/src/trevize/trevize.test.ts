@@ -460,3 +460,147 @@ describe("findSavedTrevizeEnvironment", () => {
     );
   });
 });
+
+const spaceJson = {
+  id: "spc_1",
+  workspaceId: "ws_1",
+  name: "Billing revamp",
+  description: null,
+  instructions: null,
+  repositoryIds: ["acme/billing"],
+  sharedVolumeId: null,
+  orchestratorThreadId: null,
+  createdByUserId: "usr_1",
+  createdAt: "2026-10-01T00:00:00.000Z",
+  updatedAt: "2026-10-01T00:00:00.000Z",
+  archivedAt: null,
+};
+
+describe("spaces", () => {
+  it.effect("lists a workspace's spaces and treats 404 as unavailable", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const listed = yield* TrevizeApi.listSpaces(config, "ws_1").pipe(
+        Effect.provide(layerTrevizeHttp(calls, [() => Response.json({ spaces: [spaceJson] })])),
+      );
+      const unavailable = yield* TrevizeApi.listSpaces(config, "ws_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp([], [() => Response.json({ message: "Not found" }, { status: 404 })]),
+        ),
+      );
+
+      // Older servers send no `maxEnvironments`.
+      expect(Option.map(listed, (spaces) => spaces.map((space) => space.maxEnvironments))).toEqual(
+        Option.some([undefined]),
+      );
+      expect(calls[0]?.url).toBe("https://trevize.example.test/api/v1/spaces?workspaceId=ws_1");
+      expect(unavailable).toEqual(Option.none());
+    }),
+  );
+
+  it.effect("creates a space with trimmed fields and omits empty instructions", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      yield* TrevizeApi.createSpace(config, {
+        workspaceId: "ws_1",
+        name: " Billing revamp ",
+        instructions: "  ",
+        repositoryIds: ["acme/billing"],
+        maxEnvironments: 4,
+      }).pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [() => Response.json({ ...spaceJson, maxEnvironments: 4 })]),
+        ),
+      );
+
+      expect(calls.map((call) => [call.method, call.url, JSON.parse(call.body ?? "null")])).toEqual(
+        [
+          [
+            "POST",
+            "https://trevize.example.test/api/v1/spaces",
+            {
+              workspaceId: "ws_1",
+              name: "Billing revamp",
+              repositoryIds: ["acme/billing"],
+              maxEnvironments: 4,
+            },
+          ],
+        ],
+      );
+    }),
+  );
+
+  it.effect("polls the orchestrator start while the space's environment provisions", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const fiber = yield* TrevizeApi.startOrchestratorWhenReady(config, "spc_1", {
+        model: { provider: "codex", model: "gpt-5.5" },
+      }).pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [
+            () =>
+              Response.json(
+                {
+                  code: "CONFLICT",
+                  message: "Starting",
+                  data: { status: "provisioning", environmentId: "env_1", retryAfterSeconds: 3 },
+                },
+                { status: 409 },
+              ),
+            () =>
+              Response.json({
+                threadId: "thr_orch",
+                environmentId: "env_1",
+                deepLinkUrl: "https://app.t3.codes/x",
+                existing: false,
+              }),
+          ]),
+        ),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("3 seconds");
+      const started = yield* Fiber.join(fiber);
+
+      expect(started.threadId).toBe("thr_orch");
+      expect(calls.map((call) => [call.method, call.url, JSON.parse(call.body ?? "null")])).toEqual(
+        Array.from({ length: 2 }, () => [
+          "POST",
+          "https://trevize.example.test/api/v1/spaces/spc_1/orchestrator",
+          { provider: "codex", model: "gpt-5.5" },
+        ]),
+      );
+    }),
+  );
+
+  it.effect("stops when the space's environment failed and surfaces other errors", () =>
+    Effect.gen(function* () {
+      const failed = yield* TrevizeApi.startOrchestratorWhenReady(config, "spc_1").pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp(
+            [],
+            [
+              () =>
+                Response.json(
+                  { data: { status: "failed", error: "Quota exceeded" } },
+                  { status: 409 },
+                ),
+            ],
+          ),
+        ),
+      );
+      const forbidden = yield* TrevizeApi.startOrchestratorWhenReady(config, "spc_1").pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp([], [() => Response.json({ message: "Nope" }, { status: 403 })]),
+        ),
+      );
+
+      expect([failed.reason, failed.message]).toEqual([
+        "failed",
+        "The space's environment failed to start: Quota exceeded",
+      ]);
+      expect([forbidden.reason, forbidden.message]).toEqual(["unauthorized", "Nope"]);
+    }),
+  );
+});
