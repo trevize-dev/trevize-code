@@ -16,7 +16,7 @@ import { normalizeTrevizeBaseUrl, TrevizeApiError } from "./api.ts";
  */
 
 /** Trevize's trusted public client id for this app. */
-export const TREVIZE_CODE_CLIENT_ID = "trevize-code";
+const TREVIZE_CODE_CLIENT_ID = "trevize-code";
 const DEVICE_SCOPE = "profile api";
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 /** RFC 8628 §3.5: back off by 5 seconds on every `slow_down`. */
@@ -191,7 +191,7 @@ export const awaitTrevizeDeviceSignIn = Effect.fn("clientRuntime.trevize.awaitDe
 );
 
 /** API keys are long-lived and managed in Trevize; anything else is a session to revoke. */
-export function isTrevizeApiKey(token: string): boolean {
+function isTrevizeApiKey(token: string): boolean {
   return /^(tvz_|tzv_)/.test(token.trim());
 }
 
