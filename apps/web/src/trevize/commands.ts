@@ -187,18 +187,11 @@ export const openTask = createRuntimeCommand(connectionAtomRuntime, {
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.openTask(task))),
 });
 
-/** Creates a space and starts its orchestrator in the background. */
+/** Creates a space; Trevize launches its orchestrator in the background. */
 export const createSpace = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:create-space",
   execute: (input: TrevizeSync.CreateSpaceInput) =>
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.createSpace(input))),
-});
-
-/** Starts a space's orchestrator in the background; progress shows in the sync state. */
-export const startSpaceOrchestrator = createRuntimeCommand(connectionAtomRuntime, {
-  label: "web:trevize:start-space-orchestrator",
-  execute: (spaceId: string) =>
-    TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.startOrchestrator(spaceId))),
 });
 
 export const archiveSpace = createRuntimeCommand(connectionAtomRuntime, {

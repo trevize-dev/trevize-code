@@ -172,6 +172,8 @@ describe("planTrevizeSync", () => {
 interface Harness {
   readonly layer: Layer.Layer<TrevizeSync.TrevizeCloudSync>;
   readonly requests: Array<string>;
+  /** Bodies of `POST /spaces`. */
+  readonly createdSpaces: Array<unknown>;
   readonly pairings: Array<ConnectionOnboarding.PairingConnectionInput>;
   readonly removed: Array<EnvironmentId>;
   readonly retried: Array<EnvironmentId>;
@@ -211,9 +213,9 @@ const makeHarness = Effect.fn(function* (input: {
   readonly threads?: ReadonlyArray<unknown>;
   /** Spaces of `ws_1`; absent answers 404 like a workspace without spaces. */
   readonly spaces?: ReadonlyArray<unknown>;
-  readonly orchestrator?: Array<() => Response>;
 }) {
   const requests: Array<string> = [];
+  const createdSpaces: Array<unknown> = [];
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
   const removed: Array<EnvironmentId> = [];
   const retried: Array<EnvironmentId> = [];
@@ -282,11 +284,8 @@ const makeHarness = Effect.fn(function* (input: {
     }
     if (url.pathname === "/api/v1/spaces") {
       const body = JSON.parse(String(init.body));
+      createdSpaces.push(body);
       return Promise.resolve(Response.json(spaceJson("spc_new", body.name)));
-    }
-    if (/^\/api\/v1\/spaces\/[^/]+\/orchestrator$/.test(url.pathname)) {
-      const next = input.orchestrator?.shift();
-      if (next !== undefined) return Promise.resolve(next());
     }
     if (url.pathname === "/api/v1/threads" && input.threads !== undefined) {
       return Promise.resolve(Response.json({ threads: input.threads }));
@@ -346,6 +345,7 @@ const makeHarness = Effect.fn(function* (input: {
   const harness: Harness = {
     layer,
     requests,
+    createdSpaces,
     pairings,
     removed,
     retried,
@@ -550,7 +550,7 @@ describe("TrevizeCloudSync", () => {
     }),
   );
 
-  it.effect("creates a space and starts its orchestrator in the background", () =>
+  it.effect("creates a space with its orchestrator model and starts nothing itself", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         saved: [],
@@ -558,14 +558,6 @@ describe("TrevizeCloudSync", () => {
         managedOrigins: [],
         spaces: [],
         threads: [],
-        orchestrator: [
-          () =>
-            Response.json(
-              { data: { status: "provisioning", retryAfterSeconds: 2 } },
-              { status: 409 },
-            ),
-          () => Response.json({ threadId: "thr_orch", environmentId: "env_space" }),
-        ],
       });
 
       yield* Effect.gen(function* () {
@@ -577,49 +569,19 @@ describe("TrevizeCloudSync", () => {
           orchestratorModel: { provider: "codex", model: "gpt-5.5" },
         });
         expect(space.id).toBe("spc_new");
-        const starting = yield* SubscriptionRef.get(sync.state);
-        expect([...starting.startingSpaces]).toEqual(["spc_new"]);
-        expect(starting.spaces.map((candidate) => candidate.id)).toEqual(["spc_new"]);
-
-        yield* TestClock.adjust("2 seconds");
-        const started = yield* awaitState((state) => state.startingSpaces.size === 0);
-        expect(
-          Option.map(started, (state) => [
-            state.spaces.find((candidate) => candidate.id === "spc_new")?.orchestratorThreadId,
-            state.spaceStartErrors.size,
-          ]),
-        ).toEqual(Option.some(["thr_orch", 0]));
-        expect(harness.requests.filter((request) => request.endsWith("/orchestrator"))).toEqual([
-          "POST /api/v1/spaces/spc_new/orchestrator",
-          "POST /api/v1/spaces/spc_new/orchestrator",
+        const created = yield* SubscriptionRef.get(sync.state);
+        expect(created.spaces.map((candidate) => candidate.id)).toEqual(["spc_new"]);
+        expect(harness.createdSpaces).toEqual([
+          {
+            workspaceId: "ws_1",
+            name: "Billing",
+            repositoryIds: ["acme/web"],
+            orchestrator: { provider: "codex", model: "gpt-5.5" },
+          },
         ]);
-      }).pipe(Effect.provide(harness.layer));
-    }),
-  );
-
-  it.effect("records why an orchestrator failed to start", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness({
-        saved: [],
-        environments: [],
-        managedOrigins: [],
-        spaces: [spaceJson("spc_1", "Billing")],
-        threads: [],
-        orchestrator: [
-          () => Response.json({ data: { status: "failed", error: "No quota" } }, { status: 409 }),
-        ],
-      });
-
-      yield* Effect.gen(function* () {
-        const sync = yield* TrevizeSync.TrevizeCloudSync;
-        yield* sync.startOrchestrator("spc_1");
-        const failed = yield* awaitState((state) => state.spaceStartErrors.size > 0);
-        expect(
-          Option.map(failed, (state) => [
-            state.startingSpaces.size,
-            state.spaceStartErrors.get("spc_1"),
-          ]),
-        ).toEqual(Option.some([0, "The space's environment failed to start: No quota"]));
+        expect(harness.requests.filter((request) => request.includes("/spaces/spc_new"))).toEqual(
+          [],
+        );
       }).pipe(Effect.provide(harness.layer));
     }),
   );

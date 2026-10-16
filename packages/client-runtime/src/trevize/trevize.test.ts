@@ -496,23 +496,27 @@ describe("spaces", () => {
     }),
   );
 
-  it.effect("creates a space with trimmed fields and omits empty instructions", () =>
-    Effect.gen(function* () {
-      const calls: Array<Call> = [];
-      yield* TrevizeApi.createSpace(config, {
-        workspaceId: "ws_1",
-        name: " Billing revamp ",
-        instructions: "  ",
-        repositoryIds: ["acme/billing"],
-        maxEnvironments: 4,
-      }).pipe(
-        Effect.provide(
-          layerTrevizeHttp(calls, [() => Response.json({ ...spaceJson, maxEnvironments: 4 })]),
-        ),
-      );
+  it.effect(
+    "creates a space with trimmed fields, omits empty instructions and passes the orchestrator model",
+    () =>
+      Effect.gen(function* () {
+        const calls: Array<Call> = [];
+        yield* TrevizeApi.createSpace(config, {
+          workspaceId: "ws_1",
+          name: " Billing revamp ",
+          instructions: "  ",
+          repositoryIds: ["acme/billing"],
+          maxEnvironments: 4,
+          orchestratorModel: { provider: "codex", model: "gpt-5.5" },
+        }).pipe(
+          Effect.provide(
+            layerTrevizeHttp(calls, [() => Response.json({ ...spaceJson, maxEnvironments: 4 })]),
+          ),
+        );
 
-      expect(calls.map((call) => [call.method, call.url, JSON.parse(call.body ?? "null")])).toEqual(
-        [
+        expect(
+          calls.map((call) => [call.method, call.url, JSON.parse(call.body ?? "null")]),
+        ).toEqual([
           [
             "POST",
             "https://trevize.example.test/api/v1/spaces",
@@ -521,84 +525,10 @@ describe("spaces", () => {
               name: "Billing revamp",
               repositoryIds: ["acme/billing"],
               maxEnvironments: 4,
+              orchestrator: { provider: "codex", model: "gpt-5.5" },
             },
           ],
-        ],
-      );
-    }),
-  );
-
-  it.effect("polls the orchestrator start while the space's environment provisions", () =>
-    Effect.gen(function* () {
-      const calls: Array<Call> = [];
-      const fiber = yield* TrevizeApi.startOrchestratorWhenReady(config, "spc_1", {
-        model: { provider: "codex", model: "gpt-5.5" },
-      }).pipe(
-        Effect.provide(
-          layerTrevizeHttp(calls, [
-            () =>
-              Response.json(
-                {
-                  code: "CONFLICT",
-                  message: "Starting",
-                  data: { status: "provisioning", environmentId: "env_1", retryAfterSeconds: 3 },
-                },
-                { status: 409 },
-              ),
-            () =>
-              Response.json({
-                threadId: "thr_orch",
-                environmentId: "env_1",
-                deepLinkUrl: "https://app.t3.codes/x",
-                existing: false,
-              }),
-          ]),
-        ),
-        Effect.forkChild,
-      );
-      yield* TestClock.adjust("3 seconds");
-      const started = yield* Fiber.join(fiber);
-
-      expect(started.threadId).toBe("thr_orch");
-      expect(calls.map((call) => [call.method, call.url, JSON.parse(call.body ?? "null")])).toEqual(
-        Array.from({ length: 2 }, () => [
-          "POST",
-          "https://trevize.example.test/api/v1/spaces/spc_1/orchestrator",
-          { provider: "codex", model: "gpt-5.5" },
-        ]),
-      );
-    }),
-  );
-
-  it.effect("stops when the space's environment failed and surfaces other errors", () =>
-    Effect.gen(function* () {
-      const failed = yield* TrevizeApi.startOrchestratorWhenReady(config, "spc_1").pipe(
-        Effect.flip,
-        Effect.provide(
-          layerTrevizeHttp(
-            [],
-            [
-              () =>
-                Response.json(
-                  { data: { status: "failed", error: "Quota exceeded" } },
-                  { status: 409 },
-                ),
-            ],
-          ),
-        ),
-      );
-      const forbidden = yield* TrevizeApi.startOrchestratorWhenReady(config, "spc_1").pipe(
-        Effect.flip,
-        Effect.provide(
-          layerTrevizeHttp([], [() => Response.json({ message: "Nope" }, { status: 403 })]),
-        ),
-      );
-
-      expect([failed.reason, failed.message]).toEqual([
-        "failed",
-        "The space's environment failed to start: Quota exceeded",
-      ]);
-      expect([forbidden.reason, forbidden.message]).toEqual(["unauthorized", "Nope"]);
-    }),
+        ]);
+      }),
   );
 });

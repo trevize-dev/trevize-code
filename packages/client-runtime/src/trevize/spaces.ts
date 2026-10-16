@@ -53,6 +53,16 @@ export function findOrchestratorThread(
   return threads.find((thread) => thread.id === space.orchestratorThreadId) ?? null;
 }
 
+/** Whether a space's environment failed to start (its orchestrator waits for a restart). */
+export function spaceEnvironmentFailed(
+  spaceId: string,
+  environments: ReadonlyArray<Pick<TrevizeEnvironment, "spaceId" | "status">>,
+): boolean {
+  return environments.some(
+    (environment) => environment.spaceId === spaceId && environment.status === "failed",
+  );
+}
+
 /** The space's agents: its live threads except the orchestrator, most recent activity first. */
 export function spaceAgents(
   space: Pick<TrevizeSpace, "id" | "orchestratorThreadId">,

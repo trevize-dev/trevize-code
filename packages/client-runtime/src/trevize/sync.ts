@@ -8,7 +8,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -30,10 +29,8 @@ import {
   listSpaces,
   listWorkspaceThreads,
   listWorkspaces,
-  startOrchestratorWhenReady,
   type TrevizeApiConfig,
   type TrevizeEnvironment,
-  type TrevizeOrchestratorModel,
   type TrevizeSpace,
   type TrevizeSpaceInput,
   type TrevizeThread,
@@ -180,10 +177,6 @@ export interface TrevizeCloudSyncState {
   readonly spaces: ReadonlyArray<TrevizeSpace>;
   /** Threads of those workspaces that run in a space's environment. */
   readonly spaceThreads: ReadonlyArray<TrevizeThread>;
-  /** Spaces whose orchestrator is being started from this device. */
-  readonly startingSpaces: ReadonlySet<string>;
-  /** Why the last orchestrator start of a space failed, until it is retried. */
-  readonly spaceStartErrors: ReadonlyMap<string, string>;
 }
 
 export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
@@ -197,15 +190,11 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   spaceWorkspaceIds: [],
   spaces: [],
   spaceThreads: [],
-  startingSpaces: new Set(),
-  spaceStartErrors: new Map(),
 };
 
 /** What a new space needs; the workspace defaults to the one picked in settings. */
 export interface CreateSpaceInput extends Omit<TrevizeSpaceInput, "workspaceId"> {
   readonly workspaceId?: string;
-  /** The orchestrator's model, applied when it first starts. */
-  readonly orchestratorModel?: TrevizeOrchestratorModel | null;
 }
 
 export class TrevizeCloudSync extends Context.Service<
@@ -232,19 +221,10 @@ export class TrevizeCloudSync extends Context.Service<
       TrevizeApiError
     >;
     /**
-     * Creates a space and starts its orchestrator in the background (see
-     * `startOrchestrator`). Returns once the space exists.
+     * Creates a space; Trevize launches its orchestrator in the background,
+     * and a later listing carries its thread. Returns once the space exists.
      */
     readonly createSpace: (input: CreateSpaceInput) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
-    /**
-     * Starts a space's orchestrator in the background, polling while its
-     * environment provisions. Progress shows in `startingSpaces` and
-     * `spaceStartErrors`; a start already in flight is not repeated.
-     */
-    readonly startOrchestrator: (
-      spaceId: string,
-      model?: TrevizeOrchestratorModel | null,
-    ) => Effect.Effect<void>;
     readonly archiveSpace: (spaceId: string) => Effect.Effect<void, TrevizeApiError>;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
@@ -304,7 +284,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     | HttpClient.HttpClient
   >();
   const state = yield* SubscriptionRef.make(EMPTY_TREVIZE_CLOUD_SYNC_STATE);
-  const serviceScope = yield* Scope.Scope;
   const requests = yield* Queue.sliding<void>(1);
   const waking = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
 
@@ -603,44 +582,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       ),
     );
 
-  const setStarting = (spaceId: string, starting: boolean, error: string | null) =>
-    SubscriptionRef.update(state, (current) => {
-      const startingSpaces = new Set(current.startingSpaces);
-      if (starting) startingSpaces.add(spaceId);
-      else startingSpaces.delete(spaceId);
-      const spaceStartErrors = new Map(current.spaceStartErrors);
-      if (error === null) spaceStartErrors.delete(spaceId);
-      else spaceStartErrors.set(spaceId, error);
-      return { ...current, startingSpaces, spaceStartErrors };
-    });
-
-  const startOrchestrator = Effect.fn("TrevizeCloudSync.startOrchestrator")(function* (
-    spaceId: string,
-    model?: TrevizeOrchestratorModel | null,
-  ) {
-    if ((yield* SubscriptionRef.get(state)).startingSpaces.has(spaceId)) return;
-    yield* setStarting(spaceId, true, null);
-    yield* Effect.gen(function* () {
-      const { config } = yield* requireConfig("start the orchestrator");
-      const started = yield* startOrchestratorWhenReady(config, spaceId, { model: model ?? null });
-      yield* SubscriptionRef.update(state, (current) => ({
-        ...current,
-        spaces: current.spaces.map((space) =>
-          space.id === spaceId ? { ...space, orchestratorThreadId: started.threadId } : space,
-        ),
-      }));
-      // The next listing carries the orchestrator thread and pairs its environment.
-      yield* syncNow;
-      yield* setStarting(spaceId, false, null);
-    }).pipe(
-      Effect.provideContext(context),
-      Effect.catch((error) => setStarting(spaceId, false, error.message)),
-      Effect.onInterrupt(() => setStarting(spaceId, false, null)),
-      // Outlives the caller: the start keeps polling after its view is gone.
-      Effect.forkIn(serviceScope),
-    );
-  });
-
   const createSpace = Effect.fn("TrevizeCloudSync.createSpace")(function* (
     input: CreateSpaceInput,
   ) {
@@ -661,7 +602,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       ...latest,
       spaces: [space, ...latest.spaces.filter((candidate) => candidate.id !== space.id)],
     }));
-    yield* startOrchestrator(space.id, input.orchestratorModel ?? null);
     return space;
   });
 
@@ -694,7 +634,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     wake,
     openTask,
     createSpace,
-    startOrchestrator,
     archiveSpace,
   });
 });

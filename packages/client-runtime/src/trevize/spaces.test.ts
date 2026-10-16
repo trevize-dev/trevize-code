@@ -14,6 +14,7 @@ import {
   spaceAgents,
   spaceColorIndex,
   spaceEnvironmentIds,
+  spaceEnvironmentFailed,
   spaceInitials,
   spaceNeedsYou,
 } from "./spaces.ts";
@@ -181,5 +182,17 @@ describe("spaceEnvironmentIds", () => {
       ],
     );
     expect([...ids]).toEqual([spaceSaved]);
+  });
+});
+
+describe("spaceEnvironmentFailed", () => {
+  it("flags a failed environment of the space only", () => {
+    const environments = [
+      { spaceId: "spc_1", status: "running" },
+      { spaceId: "spc_2", status: "failed" },
+      { spaceId: null, status: "failed" },
+    ] as const;
+    expect(spaceEnvironmentFailed("spc_1", environments)).toBe(false);
+    expect(spaceEnvironmentFailed("spc_2", environments)).toBe(true);
   });
 });

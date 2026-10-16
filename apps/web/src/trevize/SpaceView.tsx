@@ -268,7 +268,6 @@ function SpaceThreadPending(props: {
   readonly connectError: string | null;
   readonly onBack: () => void;
 }) {
-  const start = useAtomCommand(Trevize.startSpaceOrchestrator, { reportFailure: false });
   if (props.tab !== null && props.thread === null) {
     return (
       <SpaceEmpty
@@ -283,37 +282,18 @@ function SpaceThreadPending(props: {
     );
   }
   if (props.thread === null) {
-    const starting =
-      props.state.startingSpaces.has(props.space.id) || props.space.orchestratorThreadId !== null;
-    const error = props.state.spaceStartErrors.get(props.space.id) ?? null;
-    if (starting && error === null) {
-      return (
-        <SpaceEmpty
-          busy
-          title="Starting the orchestrator"
-          description="The space's first sandbox is starting. This can take a few minutes."
-        />
-      );
-    }
-    return (
+    // Trevize launches the orchestrator once the space's first sandbox runs.
+    const failed = TrevizeSpaces.spaceEnvironmentFailed(props.space.id, props.state.environments);
+    return failed ? (
       <SpaceEmpty
-        title={error === null ? "No orchestrator yet" : "The orchestrator didn't start"}
-        description={
-          error ??
-          "The orchestrator plans the work in this space and hands it to agents. Start it to chat."
-        }
-        action={
-          <Button
-            size="sm"
-            onClick={() =>
-              void start(props.space.id).then((result) =>
-                reportFailure("Could not start the orchestrator", result),
-              )
-            }
-          >
-            {error === null ? "Start orchestrator" : "Try again"}
-          </Button>
-        }
+        title="The space's sandbox didn't start"
+        description="Reconnect it under Settings → Connections. The orchestrator starts once it runs."
+      />
+    ) : (
+      <SpaceEmpty
+        busy
+        title="Starting the orchestrator"
+        description="The space's first sandbox is starting. This can take a few minutes."
       />
     );
   }
