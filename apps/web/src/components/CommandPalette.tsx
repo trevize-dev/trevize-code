@@ -46,6 +46,7 @@ import {
 } from "@t3tools/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
+import { TrevizeMyTasks } from "@t3tools/client-runtime/trevize";
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
@@ -56,6 +57,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  InboxIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -110,6 +112,7 @@ import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
+import { myTaskTitle, useMyTasks, useOpenMyTask } from "../trevize/MyTasks";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
@@ -716,6 +719,8 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings();
+  const myTasks = useMyTasks();
+  const { open: openMyTask } = useOpenMyTask();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -2244,6 +2249,40 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
+    });
+  }
+
+  if (myTasks.length > 0) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:my-tasks",
+      searchTerms: ["my tasks", "tasks", "inbox", "assigned", "trevize", "linear"],
+      title: "My tasks",
+      icon: <InboxIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <InboxIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: "my-tasks",
+          label: "My tasks",
+          items: myTasks.map((task) => {
+            const title = myTaskTitle(task);
+            const source = TrevizeMyTasks.myTaskSourceLabel(task);
+            const status = TrevizeMyTasks.deriveMyTaskStatus(task);
+            return {
+              kind: "action",
+              value: `my-task:${task.id}`,
+              title,
+              description: status
+                ? `${source} · ${TrevizeMyTasks.MY_TASK_STATUS_LABELS[status]}`
+                : source,
+              timestamp: TrevizeMyTasks.myTaskActivityAt(task),
+              searchTerms: [title, source, task.branch ?? ""],
+              icon: <InboxIcon className={ITEM_ICON_CLASS} />,
+              run: () => openMyTask(task),
+            };
+          }),
+        },
+      ],
     });
   }
 

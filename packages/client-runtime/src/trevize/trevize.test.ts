@@ -98,6 +98,75 @@ describe("Trevize API client", () => {
     }),
   );
 
+  it.effect("lists my threads and decodes them tolerantly", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      // The shape Trevize answers today, plus a row from a newer Trevize.
+      const current = {
+        id: "thr_1",
+        environmentId: "env_1",
+        environmentTitle: "Checkout revamp",
+        environmentStatus: "stopped",
+        workspaceId: "ws_1",
+        runtimeThreadId: "t3-thread-1",
+        runtimeProjectId: "t3-project-1",
+        title: null,
+        sourceKind: "linear",
+        sourceRef: "LIN-123",
+        sourceUrl: "https://linear.app/acme/issue/LIN-123",
+        assigneeUserId: "user_1",
+        createdByUserId: null,
+        branch: "trevize/lin-123-abc",
+        deepLinkUrl: "https://env-env_1.gw.example.test/env/t3-thread-1",
+        createdAt: "2026-10-01T00:00:00.000Z",
+      };
+      const newer = {
+        id: "thr_2",
+        environmentId: "env_1",
+        runtimeThreadId: "t3-thread-2",
+        sourceKind: "manual",
+        createdAt: "2026-10-02T00:00:00.000Z",
+        updatedAt: "2026-10-03T00:00:00.000Z",
+        status: "running",
+        pendingRuntimeRequest: { kind: "approval" },
+      };
+      const threads = yield* TrevizeApi.listMyThreads(config, "ws_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [() => Response.json({ threads: [current, newer] })]),
+        ),
+      );
+
+      expect(threads.map((thread) => [thread.id, thread.sourceRef, thread.status])).toEqual([
+        ["thr_1", "LIN-123", undefined],
+        ["thr_2", undefined, "running"],
+      ]);
+      expect(threads[1]?.pendingRuntimeRequest).toEqual({ kind: "approval" });
+      expect(calls[0]?.url).toBe(
+        "https://trevize.example.test/api/v1/threads?workspaceId=ws_1&assignee=me",
+      );
+    }),
+  );
+
+  it.effect("fails to decode a thread without its T3 thread id", () =>
+    Effect.gen(function* () {
+      const error = yield* TrevizeApi.listMyThreads(config, "ws_1").pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp(
+            [],
+            [
+              () =>
+                Response.json({
+                  threads: [{ id: "thr_1", environmentId: "env_1", sourceKind: "api" }],
+                }),
+            ],
+          ),
+        ),
+      );
+      expect(error.reason).toBe("decode");
+    }),
+  );
+
   it.effect("posts the create body and omits an empty title", () =>
     Effect.gen(function* () {
       const calls: Array<Call> = [];

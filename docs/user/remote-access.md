@@ -56,6 +56,8 @@ Trevize stops idle environments. A saved environment that is stopped shows as
 **Sleeping** and is not woken in the background. Opening one of its threads, or
 choosing **Wake**, starts it again, which can take a minute.
 
+Tasks assigned to you in Trevize, such as Linear issues delegated to an agent, are listed under **My tasks** at the top of the sidebar and in the command palette; opening one connects or wakes its environment first if needed.
+
 Everyone in the workspace can connect to the same environment and sees the same
 threads. A stopped environment keeps its files; **Stop** stops one immediately. Signing out of Trevize Cloud forgets the API key on this
 device but keeps environments you already connected.
