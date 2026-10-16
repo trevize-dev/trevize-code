@@ -5,18 +5,13 @@ import * as Option from "effect/Option";
 import { BearerConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
 import { BearerConnectionTarget } from "../connection/model.ts";
 import type { TrevizeEnvironment, TrevizeThread } from "./api.ts";
-import {
-  deriveMyTaskStatus,
-  mergeMyTasks,
-  myTaskSourceLabel,
-  resolveMyTaskTarget,
-} from "./myTasks.ts";
+import { deriveMyTaskStatus, myTaskSourceLabel, resolveMyTaskTarget } from "./myTasks.ts";
 
 function task(overrides: Partial<TrevizeThread> = {}): TrevizeThread {
   return {
     id: "thr_1",
     environmentId: "env_a",
-    t3ThreadId: "t3-thread-1",
+    runtimeThreadId: "t3-thread-1",
     sourceKind: "linear",
     createdAt: "2026-10-01T00:00:00.000Z",
     ...overrides,
@@ -30,7 +25,7 @@ function environment(id: string, status: TrevizeEnvironment["status"]): TrevizeE
     title: id,
     status,
     repositoryIds: [],
-    httpBaseUrl: `https://t3-${id}.gw.example.test`,
+    httpBaseUrl: `https://env-${id}.gw.example.test`,
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
   };
@@ -105,27 +100,9 @@ describe("myTaskSourceLabel", () => {
   });
 });
 
-describe("mergeMyTasks", () => {
-  it("dedupes across workspaces and orders by latest activity", () => {
-    const older = task({ id: "a", createdAt: "2026-10-01T00:00:00.000Z" });
-    const updated = task({
-      id: "b",
-      createdAt: "2026-09-01T00:00:00.000Z",
-      updatedAt: "2026-10-03T00:00:00.000Z",
-    });
-    const newer = task({ id: "c", createdAt: "2026-10-02T00:00:00.000Z" });
-    expect(
-      mergeMyTasks([
-        [older, newer],
-        [updated, older],
-      ]).map((t) => t.id),
-    ).toEqual(["b", "c", "a"]);
-  });
-});
-
 describe("resolveMyTaskTarget", () => {
   const T3_A = EnvironmentId.make("t3-a");
-  const saved = [savedEntry(T3_A, "https://t3-env_a.gw.example.test")];
+  const saved = [savedEntry(T3_A, "https://env-env_a.gw.example.test")];
   const threadId = ThreadId.make("t3-thread-1");
 
   it("routes to the saved environment's T3 id, not Trevize's", () => {
@@ -159,7 +136,8 @@ describe("resolveMyTaskTarget", () => {
       "Unavailable",
     );
     expect(
-      resolveMyTaskTarget(task({ t3ThreadId: " " }), [environment("env_a", "running")], saved)._tag,
+      resolveMyTaskTarget(task({ runtimeThreadId: " " }), [environment("env_a", "running")], saved)
+        ._tag,
     ).toBe("Unavailable");
   });
 });

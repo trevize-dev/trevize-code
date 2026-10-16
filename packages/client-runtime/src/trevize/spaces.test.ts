@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import { EnvironmentId, type RepositoryIdentity } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 
+import { BearerConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
+import { BearerConnectionTarget } from "../connection/model.ts";
 import type { TrevizeSpace, TrevizeThread } from "./api.ts";
 import {
   closeSpaceTab,
@@ -12,6 +15,7 @@ import {
   spaceActivityAt,
   spaceAgents,
   spaceColorIndex,
+  spaceEnvironmentIds,
   spaceEnvironmentFailed,
   spaceInitials,
   spaceNeedsYou,
@@ -23,7 +27,7 @@ function thread(id: string, overrides: Partial<TrevizeThread> = {}): TrevizeThre
   return {
     id,
     environmentId: "env_space",
-    t3ThreadId: `t3-${id}`,
+    runtimeThreadId: `t3-${id}`,
     sourceKind: "orchestrator",
     createdAt: "2026-10-01T00:00:00.000Z",
     ...overrides,
@@ -144,6 +148,44 @@ describe("space tabs", () => {
     expect(closeSpaceTab(["a", "b"], "b", "b")).toEqual({ tabs: ["a"], active: "a" });
     expect(closeSpaceTab(["a"], "a", "a")).toEqual({ tabs: [], active: null });
     expect(closeSpaceTab(["a", "b"], "a", null)).toEqual({ tabs: ["b"], active: null });
+  });
+});
+
+function savedEntry(environmentId: EnvironmentId, httpBaseUrl: string): ConnectionCatalogEntry {
+  const connectionId = `bearer:${environmentId}`;
+  return {
+    target: new BearerConnectionTarget({ environmentId, label: environmentId, connectionId }),
+    profile: Option.some(
+      new BearerConnectionProfile({
+        connectionId,
+        environmentId,
+        label: environmentId,
+        httpBaseUrl: `${httpBaseUrl}/`,
+        wsBaseUrl: httpBaseUrl.replace("https:", "wss:"),
+      }),
+    ),
+    enabled: true,
+  };
+}
+
+describe("spaceEnvironmentIds", () => {
+  it("maps saved environments of space environments, and only those", () => {
+    const spaceSaved = EnvironmentId.make("t3-space");
+    const taskSaved = EnvironmentId.make("t3-task");
+    const ids = spaceEnvironmentIds(
+      [
+        { httpBaseUrl: "https://env-a.gw.example.test", spaceId: "spc_1" },
+        { httpBaseUrl: "https://env-b.gw.example.test", spaceId: null },
+        { httpBaseUrl: "https://env-c.gw.example.test" },
+        // A space environment this device has not saved has no T3 threads here.
+        { httpBaseUrl: "https://env-d.gw.example.test", spaceId: "spc_1" },
+      ],
+      [
+        savedEntry(spaceSaved, "https://env-a.gw.example.test"),
+        savedEntry(taskSaved, "https://env-b.gw.example.test"),
+      ],
+    );
+    expect([...ids]).toEqual([spaceSaved]);
   });
 });
 

@@ -82,17 +82,6 @@ export function myTaskActivityAt(task: TrevizeThread): string {
   return task.updatedAt ?? task.createdAt;
 }
 
-/** Merges per-workspace listings: one row per task, most recent activity first. */
-export function mergeMyTasks(
-  listings: ReadonlyArray<ReadonlyArray<TrevizeThread>>,
-): ReadonlyArray<TrevizeThread> {
-  const byId = new Map<string, TrevizeThread>();
-  for (const listing of listings) {
-    for (const task of listing) byId.set(task.id, task);
-  }
-  return [...byId.values()].sort((a, b) => myTaskActivityAt(b).localeCompare(myTaskActivityAt(a)));
-}
-
 const isThreadId = Schema.is(ThreadId);
 
 export type MyTaskTarget =
@@ -117,7 +106,7 @@ export type MyTaskTarget =
  * environment's gateway origin like the rest of Trevize sync.
  */
 export function resolveMyTaskTarget(
-  task: Pick<TrevizeThread, "environmentId" | "t3ThreadId">,
+  task: Pick<TrevizeThread, "environmentId" | "runtimeThreadId">,
   environments: ReadonlyArray<TrevizeEnvironment>,
   saved: Iterable<ConnectionCatalogEntry>,
 ): MyTaskTarget {
@@ -128,7 +117,7 @@ export function resolveMyTaskTarget(
       reason: "Trevize no longer lists this task's environment.",
     };
   }
-  const threadId = task.t3ThreadId;
+  const threadId = task.runtimeThreadId;
   if (!isThreadId(threadId)) {
     return { _tag: "Unavailable", reason: "Trevize sent an invalid thread id." };
   }
