@@ -249,6 +249,70 @@ describe("Trevize API client", () => {
   );
 });
 
+describe("wakeWhenReady", () => {
+  const wakeUrl = "POST https://trevize.example.test/api/v1/environments/env_1/wake";
+  const connectUrl = "POST https://trevize.example.test/api/v1/environments/env_1/connect";
+
+  it.effect("polls wake until the environment runs, without minting a pairing token", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const fiber = yield* TrevizeApi.wakeWhenReady(config, "env_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [
+            () => Response.json({ status: "starting", retryAfterSeconds: 3 }),
+            () => Response.json({ status: "provisioning" }),
+            () => Response.json({ status: "running" }),
+          ]),
+        ),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("3 seconds");
+      // An unknown status without a retry hint waits the default two seconds.
+      yield* TestClock.adjust("2 seconds");
+      yield* Fiber.join(fiber);
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        wakeUrl,
+        wakeUrl,
+        wakeUrl,
+      ]);
+    }),
+  );
+
+  it.effect("stops with the server's error when the environment failed to start", () =>
+    Effect.gen(function* () {
+      const error = yield* TrevizeApi.wakeWhenReady(config, "env_1").pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp(
+            [],
+            [() => Response.json({ status: "failed", error: "Out of capacity" })],
+          ),
+        ),
+      );
+
+      expect(error.reason).toBe("failed");
+      expect(error.message).toContain("Out of capacity");
+    }),
+  );
+
+  it.effect("falls back to connect on a Trevize without wake", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      yield* TrevizeApi.wakeWhenReady(config, "env_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [
+            () => Response.json({ message: "Not found" }, { status: 404 }),
+            () => Response.json(readyJson),
+          ]),
+        ),
+      );
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([wakeUrl, connectUrl]);
+    }),
+  );
+});
+
 describe("connectTrevizeEnvironment", () => {
   it.effect("redeems the pairing token through the pairing flow with the Trevize title", () =>
     Effect.gen(function* () {

@@ -1,6 +1,7 @@
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import * as Schema from "effect/Schema";
 
@@ -82,6 +83,16 @@ const TrevizeConnectFailed = Schema.Struct({
   status: Schema.Literal("failed"),
   error: Schema.optional(Schema.NullOr(Schema.String)),
   retryAfterSeconds: Schema.optional(Schema.Number),
+});
+
+/**
+ * `wake` answers with the environment's progress and never a pairing token.
+ * `ready`/`running` mean it is up; unknown statuses are treated as starting.
+ */
+const TrevizeWakeResult = Schema.Struct({
+  status: Schema.String,
+  retryAfterSeconds: Schema.optional(Schema.Number),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const TrevizeConnectResult = Schema.Union([
@@ -274,6 +285,8 @@ const requestConnect = Effect.fn("clientRuntime.trevize.requestConnect")(functio
 const DEFAULT_CONNECT_MAX_WAIT_MS = 5 * 60_000;
 const MIN_RETRY_SECONDS = 1;
 const MAX_RETRY_SECONDS = 15;
+/** Used when `wake` answers a non-final status without `retryAfterSeconds`. */
+const DEFAULT_WAKE_RETRY_SECONDS = 2;
 
 /**
  * Calls `connect` until the environment is ready, honouring `retryAfterSeconds`
@@ -307,6 +320,67 @@ export const connectWhenReady = Effect.fn("clientRuntime.trevize.connectWhenRead
       return yield* new TrevizeApiError({
         reason: "timeout",
         message: "The Trevize environment is still starting. Try connecting again in a minute.",
+      });
+    }
+    yield* Effect.sleep(Duration.millis(delayMs));
+  }
+});
+
+/**
+ * Calls `wake` until the environment is running, like `connectWhenReady` but
+ * without minting a pairing token: the client's saved credential still works.
+ * Servers without `wake` (HTTP 404) fall back to `connectWhenReady`, whose
+ * token is dropped.
+ */
+export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+  options?: { readonly maxWaitMs?: number },
+) {
+  const maxWaitMs = options?.maxWaitMs ?? DEFAULT_CONNECT_MAX_WAIT_MS;
+  const startedAt = yield* Clock.currentTimeMillis;
+  while (true) {
+    const result = yield* execute(
+      config,
+      HttpClientRequest.post(
+        apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/wake`),
+      ),
+      TrevizeWakeResult,
+    ).pipe(
+      Effect.map(Option.some),
+      // An older Trevize without `wake`.
+      Effect.catchIf(
+        (error) => error.status === 404,
+        () => Effect.succeedNone,
+      ),
+    );
+    if (Option.isNone(result)) {
+      const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
+      yield* connectWhenReady(config, environmentId, {
+        maxWaitMs: Math.max(0, maxWaitMs - elapsedMs),
+      });
+      return;
+    }
+    const wake = result.value;
+    if (wake.status === "ready" || wake.status === "running") return;
+    if (wake.status === "failed") {
+      return yield* new TrevizeApiError({
+        reason: "failed",
+        message: wake.error
+          ? `The Trevize environment failed to start: ${wake.error}`
+          : "The Trevize environment failed to start. Try waking it again in a minute.",
+      });
+    }
+    const delayMs =
+      Math.min(
+        MAX_RETRY_SECONDS,
+        Math.max(MIN_RETRY_SECONDS, wake.retryAfterSeconds ?? DEFAULT_WAKE_RETRY_SECONDS),
+      ) * 1000;
+    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
+    if (elapsedMs + delayMs > maxWaitMs) {
+      return yield* new TrevizeApiError({
+        reason: "timeout",
+        message: "The Trevize environment is still starting. Try again in a minute.",
       });
     }
     yield* Effect.sleep(Duration.millis(delayMs));
