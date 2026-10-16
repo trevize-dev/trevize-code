@@ -30,6 +30,26 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
+## Trevize Cloud
+
+Trevize runs Trevize Code environments in cloud sandboxes with your repositories
+checked out, so agents keep working when your own machines are off. Open
+**Settings → Connections → Trevize Cloud** and sign in with a Trevize API key
+(`tvz_…`). If your team uses its own Trevize deployment, change the Trevize URL
+before signing in.
+
+Pick a workspace to see its environments. **New environment** starts a sandbox
+with the repositories you choose, each added as a project. **Connect** pairs this
+device with the environment; it then appears under **Environments** like any
+other paired machine and reconnects on startup. Connecting a stopped environment
+wakes it first, which can take a minute. If a saved environment stops accepting
+this device, choose **Reconnect** to pair it again without adding a duplicate.
+
+Everyone in the workspace can connect to the same environment and sees the same
+threads. Trevize stops idle environments and keeps their files; **Stop** does
+this immediately. Signing out of Trevize Cloud forgets the API key on this
+device but keeps environments you already connected.
+
 ## Pair over a LAN or private network
 
 Use direct pairing when the other device can reach the host's network address.

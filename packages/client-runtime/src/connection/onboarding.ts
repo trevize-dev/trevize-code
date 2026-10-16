@@ -38,6 +38,10 @@ export interface PairingConnectionInput {
   readonly pairingUrl?: string;
   readonly host?: string;
   readonly pairingCode?: string;
+  /** Saved label; defaults to the label the environment reports about itself. */
+  readonly label?: string;
+  /** `false` to never learn the addresses the server reports; see `BearerConnectionProfile`. */
+  readonly learnRoutes?: false;
   /**
    * Set when adding a route to a saved machine: the pairing must reach this
    * environment, or nothing is saved.
@@ -134,19 +138,21 @@ export const preparePairingRegistration = Effect.fn(
     clientMetadata: presentation.metadata,
   }).pipe(Effect.mapError(mapRemoteEnvironmentError));
   const connectionId = bearerConnectionId(descriptor.environmentId, target.httpBaseUrl);
+  const label = input.label?.trim() || descriptor.label;
 
   return new BearerConnectionRegistration({
     target: new BearerConnectionTarget({
       environmentId: descriptor.environmentId,
-      label: descriptor.label,
+      label,
       connectionId,
     }),
     profile: new BearerConnectionProfile({
       connectionId,
       environmentId: descriptor.environmentId,
-      label: descriptor.label,
+      label,
       httpBaseUrl: target.httpBaseUrl,
       wsBaseUrl: target.wsBaseUrl,
+      ...(input.learnRoutes === false ? { learnRoutes: false } : {}),
     }),
     credential: new BearerConnectionCredential({
       token: access.access_token,

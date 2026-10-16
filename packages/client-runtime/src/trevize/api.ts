@@ -1,0 +1,314 @@
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
+import * as Schema from "effect/Schema";
+
+/**
+ * Client for the Trevize public API (`/api/v1`). Trevize runs T3 servers in
+ * cloud sandboxes and acts as a trusted broker: `connect` returns a one-time
+ * pairing token that the client redeems against the environment with the
+ * ordinary pairing flow (see `./connect.ts`).
+ */
+
+export const DEFAULT_TREVIZE_API_URL = "https://app.trevize.dev";
+
+export interface TrevizeApiConfig {
+  /** Trevize app origin, e.g. `https://app.trevize.dev`. */
+  readonly baseUrl: string;
+  /** A Trevize API key (`tvz_…`). */
+  readonly apiKey: string;
+}
+
+export const TrevizeWorkspace = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+});
+export type TrevizeWorkspace = typeof TrevizeWorkspace.Type;
+
+export const TrevizeRepository = Schema.Struct({
+  id: Schema.Number,
+  name: Schema.String,
+  fullName: Schema.String,
+  private: Schema.Boolean,
+});
+export type TrevizeRepository = typeof TrevizeRepository.Type;
+
+export const TrevizeEnvironmentStatus = Schema.Literals([
+  "provisioning",
+  "starting",
+  "running",
+  "stopped",
+  "failed",
+  "archived",
+]);
+export type TrevizeEnvironmentStatus = typeof TrevizeEnvironmentStatus.Type;
+
+export const TrevizeEnvironment = Schema.Struct({
+  id: Schema.String,
+  workspaceId: Schema.String,
+  title: Schema.NullOr(Schema.String),
+  status: TrevizeEnvironmentStatus,
+  /** What runs in the sandbox, `"trevize-code"` today; absent on older servers. */
+  runtime: Schema.optional(Schema.String),
+  repositoryIds: Schema.Array(Schema.String),
+  httpBaseUrl: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  lastActivityAt: Schema.optional(Schema.NullOr(Schema.String)),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+});
+export type TrevizeEnvironment = typeof TrevizeEnvironment.Type;
+
+const TrevizeConnectReady = Schema.Struct({
+  status: Schema.Literal("ready"),
+  httpBaseUrl: Schema.String,
+  wsBaseUrl: Schema.String,
+  pairingToken: Schema.String,
+  pairingUrl: Schema.String,
+  expiresAt: Schema.String,
+  label: Schema.String,
+});
+export type TrevizeConnectReady = typeof TrevizeConnectReady.Type;
+
+const TrevizeConnectStarting = Schema.Struct({
+  status: Schema.Literal("starting"),
+  retryAfterSeconds: Schema.Number,
+});
+
+/** Answered for a recently failed environment; connecting again after `retryAfterSeconds` retries the start. */
+const TrevizeConnectFailed = Schema.Struct({
+  status: Schema.Literal("failed"),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+  retryAfterSeconds: Schema.optional(Schema.Number),
+});
+
+const TrevizeConnectResult = Schema.Union([
+  TrevizeConnectReady,
+  TrevizeConnectStarting,
+  TrevizeConnectFailed,
+]);
+export type TrevizeConnectResult = typeof TrevizeConnectResult.Type;
+
+const WorkspacesResponse = Schema.Struct({
+  items: Schema.Array(TrevizeWorkspace),
+});
+const RepositoriesResponse = Schema.Struct({
+  items: Schema.Array(TrevizeRepository),
+});
+const EnvironmentsResponse = Schema.Struct({
+  environments: Schema.Array(TrevizeEnvironment),
+});
+/** Both the public-API auth middleware (`{ error: { message } }`) and oRPC (`{ message }`) shapes. */
+const ErrorBody = Schema.Struct({
+  message: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.Struct({ message: Schema.String })),
+});
+
+export class TrevizeApiError extends Schema.TaggedError<TrevizeApiError>()("TrevizeApiError", {
+  reason: Schema.Literals(["unauthorized", "network", "request", "decode", "timeout", "failed"]),
+  message: Schema.String,
+  status: Schema.optional(Schema.Number),
+}) {}
+
+export function normalizeTrevizeBaseUrl(value: string): string {
+  const trimmed = value.trim() || DEFAULT_TREVIZE_API_URL;
+  const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  return url.origin;
+}
+
+function apiUrl(config: TrevizeApiConfig, path: string): string {
+  return `${normalizeTrevizeBaseUrl(config.baseUrl)}/api/v1${path}`;
+}
+
+const decodeErrorBody = Schema.decodeUnknownEffect(ErrorBody);
+
+const failureFromResponse = (response: HttpClientResponse.HttpClientResponse) =>
+  response.json.pipe(
+    Effect.flatMap(decodeErrorBody),
+    Effect.map((body) => body.error?.message ?? body.message ?? null),
+    Effect.orElseSucceed(() => null),
+    Effect.flatMap((detail) =>
+      Effect.fail(
+        new TrevizeApiError({
+          reason: response.status === 401 || response.status === 403 ? "unauthorized" : "request",
+          status: response.status,
+          message: detail ?? `Trevize answered with HTTP ${response.status}.`,
+        }),
+      ),
+    ),
+  );
+
+const execute = <S extends Schema.Constraint>(
+  config: TrevizeApiConfig,
+  request: HttpClientRequest.HttpClientRequest,
+  schema: S,
+) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient;
+    const response = yield* client
+      .execute(
+        request.pipe(
+          HttpClientRequest.bearerToken(config.apiKey.trim()),
+          HttpClientRequest.acceptJson,
+        ),
+      )
+      .pipe(
+        // Trevize's CORS policy does not allow `traceparent`/`b3`, so a
+        // propagated trace header would fail the browser preflight.
+        Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+        Effect.mapError(
+          (cause) =>
+            new TrevizeApiError({
+              reason: "network",
+              message: `Could not reach Trevize: ${cause.message}`,
+            }),
+        ),
+      );
+    if (response.status < 200 || response.status >= 300) {
+      return yield* failureFromResponse(response);
+    }
+    return yield* response.json.pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+      Effect.mapError(
+        (cause) =>
+          new TrevizeApiError({
+            reason: "decode",
+            status: response.status,
+            message: `Unexpected response from Trevize: ${cause.message}`,
+          }),
+      ),
+    );
+  });
+
+export const listWorkspaces = Effect.fn("clientRuntime.trevize.listWorkspaces")(function* (
+  config: TrevizeApiConfig,
+) {
+  const body = yield* execute(
+    config,
+    HttpClientRequest.get(apiUrl(config, "/workspaces")),
+    WorkspacesResponse,
+  );
+  return body.items;
+});
+
+export const listRepositories = Effect.fn("clientRuntime.trevize.listRepositories")(function* (
+  config: TrevizeApiConfig,
+  workspaceId: string,
+) {
+  const body = yield* execute(
+    config,
+    HttpClientRequest.get(
+      apiUrl(config, `/workspaces/${encodeURIComponent(workspaceId)}/repositories`),
+    ),
+    RepositoriesResponse,
+  );
+  return body.items;
+});
+
+export const listEnvironments = Effect.fn("clientRuntime.trevize.listEnvironments")(function* (
+  config: TrevizeApiConfig,
+  workspaceId: string,
+) {
+  const body = yield* execute(
+    config,
+    HttpClientRequest.get(apiUrl(config, "/environments")).pipe(
+      HttpClientRequest.setUrlParam("workspaceId", workspaceId),
+    ),
+    EnvironmentsResponse,
+  );
+  return body.environments;
+});
+
+export const createEnvironment = Effect.fn("clientRuntime.trevize.createEnvironment")(function* (
+  config: TrevizeApiConfig,
+  input: {
+    readonly workspaceId: string;
+    readonly repositoryIds: ReadonlyArray<string>;
+    readonly title?: string;
+  },
+) {
+  const title = input.title?.trim();
+  return yield* execute(
+    config,
+    HttpClientRequest.post(apiUrl(config, "/environments")).pipe(
+      HttpClientRequest.bodyJsonUnsafe({
+        workspaceId: input.workspaceId,
+        repositoryIds: input.repositoryIds,
+        ...(title ? { title } : {}),
+      }),
+    ),
+    TrevizeEnvironment,
+  );
+});
+
+export const stopEnvironment = Effect.fn("clientRuntime.trevize.stopEnvironment")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.post(
+      apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/stop`),
+    ),
+    TrevizeEnvironment,
+  );
+});
+
+/** One `connect` call. Wakes a stopped environment and may answer `starting`. */
+const requestConnect = Effect.fn("clientRuntime.trevize.requestConnect")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.post(
+      apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/connect`),
+    ),
+    TrevizeConnectResult,
+  );
+});
+
+/** Long enough for a cold sandbox to clone its repositories and start T3. */
+const DEFAULT_CONNECT_MAX_WAIT_MS = 5 * 60_000;
+const MIN_RETRY_SECONDS = 1;
+const MAX_RETRY_SECONDS = 15;
+
+/**
+ * Calls `connect` until the environment is ready, honouring `retryAfterSeconds`
+ * (clamped to 1–15s), and fails with a `timeout` error once `maxWaitMs` would
+ * be exceeded.
+ */
+export const connectWhenReady = Effect.fn("clientRuntime.trevize.connectWhenReady")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+  options?: { readonly maxWaitMs?: number },
+) {
+  const maxWaitMs = options?.maxWaitMs ?? DEFAULT_CONNECT_MAX_WAIT_MS;
+  const startedAt = yield* Clock.currentTimeMillis;
+  while (true) {
+    const result = yield* requestConnect(config, environmentId);
+    if (result.status === "ready") {
+      return result;
+    }
+    if (result.status === "failed") {
+      return yield* new TrevizeApiError({
+        reason: "failed",
+        message: result.error
+          ? `The Trevize environment failed to start: ${result.error}`
+          : "The Trevize environment failed to start. Try connecting again in a minute.",
+      });
+    }
+    const delayMs =
+      Math.min(MAX_RETRY_SECONDS, Math.max(MIN_RETRY_SECONDS, result.retryAfterSeconds)) * 1000;
+    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
+    if (elapsedMs + delayMs > maxWaitMs) {
+      return yield* new TrevizeApiError({
+        reason: "timeout",
+        message: "The Trevize environment is still starting. Try connecting again in a minute.",
+      });
+    }
+    yield* Effect.sleep(Duration.millis(delayMs));
+  }
+});

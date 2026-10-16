@@ -64,6 +64,12 @@ export function resolveRemoteOpenState(input: {
   readonly remoteOpenTargets: ReadonlyArray<RemoteOpenTarget> | undefined;
   /** True when running inside the desktop app's renderer. */
   readonly isDesktopRenderer: boolean;
+  /**
+   * True when the environment is only reachable through a gateway (its saved
+   * route never learns server-reported addresses, e.g. Trevize Cloud), so the
+   * hosts it advertises are not reachable over SSH either.
+   */
+  readonly gatewayOnly?: boolean;
 }): RemoteOpenState {
   const { target } = input;
   // No catalog entry: keep today's exec behavior rather than guessing.
@@ -89,7 +95,7 @@ export function resolveRemoteOpenState(input: {
   if (input.sshAlias !== null && input.sshAlias.length > 0) {
     return { mode: "remote-links", host: { kind: "ssh-alias", host: input.sshAlias } };
   }
-  const advertised = input.remoteOpenTargets?.[0];
+  const advertised = input.gatewayOnly === true ? undefined : input.remoteOpenTargets?.[0];
   if (advertised !== undefined) {
     return { mode: "remote-links", host: advertised };
   }
@@ -112,6 +118,7 @@ export function useRemoteOpenResolution(environmentId: EnvironmentId | null): Re
         sshAlias,
         remoteOpenTargets: presentation.serverConfig?.remoteOpenTargets,
         isDesktopRenderer: window.desktopBridge !== undefined,
+        gatewayOnly: profile?._tag === "BearerConnectionProfile" && profile.learnRoutes === false,
       }),
       isResolved: true,
     };
