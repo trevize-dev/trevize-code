@@ -56,6 +56,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  LayoutGridIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -110,6 +111,8 @@ import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
+import { openSpaceSettings } from "../trevize/SpaceSettingsDialog";
+import { SpaceBadge, openNewSpaceDialog, useSpaces } from "../trevize/Spaces";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
@@ -716,6 +719,7 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings();
+  const { available: spacesAvailable, spaces } = useSpaces();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -2243,6 +2247,72 @@ function OpenCommandPaletteDialog(props: {
       icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+      },
+    });
+  }
+
+  if (spacesAvailable) {
+    if (spaces.length > 0) {
+      actionItems.push({
+        kind: "submenu",
+        value: "action:open-space",
+        searchTerms: ["space", "spaces", "orchestrator", "trevize", "open space"],
+        title: "Open space",
+        icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+        addonIcon: <LayoutGridIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "spaces",
+            label: "Spaces",
+            items: spaces.map((space) => ({
+              kind: "action",
+              value: `space:${space.id}`,
+              title: space.name,
+              timestamp: space.updatedAt,
+              searchTerms: [space.name, "space"],
+              icon: <SpaceBadge space={space} />,
+              run: async () => {
+                await navigate({ to: "/spaces/$spaceId", params: { spaceId: space.id } });
+              },
+            })),
+          },
+        ],
+      });
+    }
+    if (spaces.length > 0) {
+      actionItems.push({
+        kind: "submenu",
+        value: "action:space-settings",
+        searchTerms: ["space settings", "rename space", "space icon", "space color", "space"],
+        title: "Space settings",
+        icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
+        addonIcon: <SettingsIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "space-settings",
+            label: "Spaces",
+            items: spaces.map((space) => ({
+              kind: "action",
+              value: `space-settings:${space.id}`,
+              title: space.name,
+              searchTerms: [space.name, "space settings"],
+              icon: <SpaceBadge space={space} />,
+              run: async () => {
+                openSpaceSettings(space.id);
+              },
+            })),
+          },
+        ],
+      });
+    }
+    actionItems.push({
+      kind: "action",
+      value: "action:new-space",
+      searchTerms: ["new space", "create space", "space", "orchestrator", "trevize"],
+      title: "New space",
+      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openNewSpaceDialog();
       },
     });
   }

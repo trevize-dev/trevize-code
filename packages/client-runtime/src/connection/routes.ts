@@ -243,9 +243,14 @@ export function mergeLearnedRoutes(input: {
       ? credentialConnectionId(active.connectionId)
       : undefined;
 
-  // Usable reported addresses, by origin.
+  // Usable reported addresses, by origin. None when a saved route opts out of
+  // learning, which also drops routes learned before it did.
   const reported = new Map<string, URL>();
-  for (const endpoint of input.reported) {
+  const learning = saved.every((route) => {
+    const profile = Option.getOrNull(route.profile);
+    return profile?._tag !== "BearerConnectionProfile" || profile.learnRoutes !== false;
+  });
+  for (const endpoint of learning ? input.reported : []) {
     let url: URL;
     try {
       url = new URL(endpoint.httpBaseUrl);

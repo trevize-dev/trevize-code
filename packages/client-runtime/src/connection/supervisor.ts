@@ -122,6 +122,13 @@ export interface EnvironmentSupervisorOptions {
     readonly activeRoute: ConnectionRoute;
     readonly reported: ReadonlyArray<{ readonly httpBaseUrl: string }>;
   }) => Effect.Effect<Option.Option<ConnectionCatalogEntry>>;
+  /**
+   * Whether automatic retries are paused, e.g. while the server is known to be
+   * asleep. While paused, the supervisor does not start an attempt until
+   * `retryNow`; wakeups and network changes do not try again. A live session
+   * is left alone.
+   */
+  readonly retriesPaused?: Effect.Effect<boolean>;
 }
 
 /**
@@ -279,6 +286,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   // closed or failed before answering, so the follow-up reconnect skips the
   // first backoff rung instead of sleeping.
   const probeUnanswered = yield* Ref.make(false);
+  const retriesPaused = options?.retriesPaused ?? Effect.succeed(false);
   const state = yield* SubscriptionRef.make<SupervisorConnectionState>(
     !initialIntent.desired
       ? availableState(initialIntent, 0)
@@ -872,6 +880,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     // runs even while the network reports offline: the report is often wrong,
     // and the replaced session must not leave the client offline.
     let replacing = false;
+    // Set when an explicit retry ends a paused wait, so that one attempt runs.
+    let retryWhilePaused = false;
 
     for (;;) {
       if (yield* Ref.getAndSet(resetRetryState, false)) {
@@ -897,6 +907,30 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         }
         continue;
       }
+
+      if (!retryWhilePaused && !replacing && (yield* retriesPaused)) {
+        yield* clearLease;
+        yield* SubscriptionRef.update(state, (current): SupervisorConnectionState => ({
+          ...current,
+          desired: currentIntent.desired,
+          network: currentIntent.network,
+          phase: current.phase === "blocked" ? "blocked" : "backoff",
+          stage: null,
+          retryAt: null,
+        }));
+        // Wakeups and network changes do not try again while paused.
+        const next = yield* Queue.take(signals).pipe(
+          Effect.repeat({
+            until: (signal) =>
+              signal._tag === "RetryRequested" ||
+              signal._tag === "ConnectRequested" ||
+              signal._tag === "DisconnectRequested",
+          }),
+        );
+        retryWhilePaused = next._tag === "RetryRequested";
+        continue;
+      }
+      retryWhilePaused = false;
 
       const attempt = failureCount + 1;
       const nextGeneration = generation + 1;

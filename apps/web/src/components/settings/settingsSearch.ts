@@ -902,6 +902,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
   },
   {
+    id: "trevize-cloud",
+    title: "Trevize Cloud",
+    to: "/settings/connections",
+    searchTerms: [
+      "trevize cloud sandbox connect environment api key workspace automatic sync sleeping wake",
+    ],
+  },
+  {
     id: "load-balancing",
     title: "Load balancing",
     to: "/settings/connections",

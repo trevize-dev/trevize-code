@@ -180,6 +180,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from "./ui/sidebar";
+import { SpacesSidebarSection, useSpaceEnvironmentIds } from "../trevize/Spaces";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -1280,7 +1281,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
   });
   const openPrLink = useOpenPrLink();
-  const sidebarThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const memberThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const spaceEnvironmentIds = useSpaceEnvironmentIds();
+  const sidebarThreads = useMemo(
+    () => withoutSpaceThreads(memberThreads, spaceEnvironmentIds),
+    [memberThreads, spaceEnvironmentIds],
+  );
   const sidebarThreadByKey = useMemo(
     () =>
       new Map(
@@ -3111,6 +3117,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
       ) : null}
       <LocalSecondaryStatus />
       <SidebarGroup>
+        <SpacesSidebarSection />
         <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
           <span className="text-xs font-medium text-sidebar-muted-foreground/80">Projects</span>
           <div className="flex items-center gap-1">
@@ -3226,9 +3233,24 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
   );
 });
 
+/** A space's orchestrator and agents belong to the space, not the thread list. */
+function withoutSpaceThreads<T extends { readonly environmentId: EnvironmentId }>(
+  threads: ReadonlyArray<T>,
+  spaceEnvironmentIds: ReadonlySet<EnvironmentId>,
+): ReadonlyArray<T> {
+  return spaceEnvironmentIds.size === 0
+    ? threads
+    : threads.filter((thread) => !spaceEnvironmentIds.has(thread.environmentId));
+}
+
 export default function LegacySidebar() {
   const projects = useProjects();
-  const sidebarThreads = useThreadShells();
+  const allThreads = useThreadShells();
+  const spaceEnvironmentIds = useSpaceEnvironmentIds();
+  const sidebarThreads = useMemo(
+    () => withoutSpaceThreads(allThreads, spaceEnvironmentIds),
+    [allThreads, spaceEnvironmentIds],
+  );
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);

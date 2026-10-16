@@ -97,6 +97,8 @@ import {
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
+import { TrevizeCloudSettings } from "./TrevizeCloudSettings";
+import { TrevizeWakeButton, useTrevizeSleepState } from "~/trevize/TrevizeWake";
 import { Input } from "../ui/input";
 import { CommandShortcut } from "../ui/command";
 import {
@@ -1640,7 +1642,11 @@ function SavedBackendListRow({
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
-  const status = savedBackendStatus(environment);
+  const trevizeSleep = useTrevizeSleepState(environmentId, isConnected);
+  const status: ReturnType<typeof savedBackendStatus> =
+    trevizeSleep === null
+      ? savedBackendStatus(environment)
+      : { text: trevizeSleep === "waking" ? "Waking" : "Sleeping", tone: "muted" };
   const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
   // A saved T3 Connect machine this device has never reached (unsupported,
   // or not yet connected) still has a descriptor from relay discovery, so
@@ -1696,9 +1702,11 @@ function SavedBackendListRow({
   const statusTooltip = `${
     unsupported
       ? (environment.connection.error ?? connectionStatusText(environment.connection))
-      : enabled
-        ? connectionStatusText(environment.connection)
-        : "Switched off"
+      : !enabled
+        ? "Switched off"
+        : trevizeSleep !== null
+          ? "Stopped in Trevize Cloud. Wake it to reconnect."
+          : connectionStatusText(environment.connection)
   }${
     versionMismatch
       ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
@@ -1782,6 +1790,7 @@ function SavedBackendListRow({
           label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
         />
       ) : null}
+      {enabled ? <TrevizeWakeButton environmentId={environmentId} sleep={trevizeSleep} /> : null}
       {showUpdateAction ? (
         <ServerUpdateAction
           environmentId={environmentId}
@@ -4198,6 +4207,7 @@ export function ConnectionsSettings() {
           savedEnvironments={savedEnvironments}
         />
       </SettingsSection>
+      <TrevizeCloudSettings />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
           environmentLabel={pendingT3ConnectRemoval?.label ?? null}

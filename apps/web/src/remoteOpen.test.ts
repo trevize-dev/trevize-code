@@ -50,6 +50,18 @@ describe("resolveRemoteOpenState", () => {
     });
   });
 
+  it("offers no deep links for a gateway-only environment", () => {
+    expect(
+      resolveRemoteOpenState({
+        target: primaryTarget("https://env-env.gw.example.test"),
+        sshAlias: null,
+        isDesktopRenderer: false,
+        remoteOpenTargets: TAILSCALE_TARGETS,
+        gatewayOnly: true,
+      }),
+    ).toEqual({ mode: "remote-unavailable" });
+  });
+
   it("keeps exec behavior for the desktop app's own primary even on a NAT URL", () => {
     // wsl-only mode binds the primary to the WSL2 NAT address; it is still
     // this machine because the desktop app manages its own primary backend.
