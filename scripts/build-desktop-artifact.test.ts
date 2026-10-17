@@ -45,6 +45,7 @@ import {
   preflightLinuxDesktopBuild,
   preflightMacDesktopBuild,
   preflightWindowsDesktopBuild,
+  isMacPasskeySigningEnabled,
   renderMacPasskeyEntitlements,
   resolveMacWebAuthnEntitlements,
   resolveClerkPasskeyNativeArtifacts,
@@ -1937,6 +1938,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }),
     ),
   );
+
+  it("enables macOS passkey signing unless explicitly opted out", () => {
+    assert.isTrue(isMacPasskeySigningEnabled({}));
+    assert.isTrue(isMacPasskeySigningEnabled({ T3CODE_MACOS_PASSKEY_SIGNING: "true" }));
+    assert.isFalse(isMacPasskeySigningEnabled({ T3CODE_MACOS_PASSKEY_SIGNING: "false" }));
+    assert.isFalse(isMacPasskeySigningEnabled({ T3CODE_MACOS_PASSKEY_SIGNING: " FALSE " }));
+  });
 
   it("derives macOS passkey signing configuration from the Clerk publishable key", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
