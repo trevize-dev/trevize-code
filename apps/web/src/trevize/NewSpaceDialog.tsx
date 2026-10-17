@@ -109,7 +109,7 @@ function OrchestratorModelField(props: {
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
       ),
     [providers, settings],
   );
@@ -140,6 +140,7 @@ function OrchestratorModelField(props: {
   return (
     <Field label="Orchestrator" hint="Agents choose their own model per task.">
       <ProviderModelPicker
+        environmentId={props.environmentId}
         disabled={props.disabled}
         activeInstanceId={activeInstanceId}
         model={activeModel}
