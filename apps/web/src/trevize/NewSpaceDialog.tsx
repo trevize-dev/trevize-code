@@ -6,7 +6,7 @@ import {
 import { TrevizeSpaces } from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
 import { scheduledTaskDefaultModel } from "~/components/settings/scheduledTasksSettings.logic";
@@ -37,11 +37,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { toastManager } from "~/components/ui/toast";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "~/modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "~/providerInstances";
+import { providerInstanceEntriesFor } from "~/providerInstances";
 import { useProjects } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "~/state/server";
@@ -58,14 +54,12 @@ interface CloudProject {
 /** The user's projects that can run in the cloud: one row per GitHub repository. */
 function useCloudProjects(): ReadonlyArray<CloudProject> {
   const projects = useProjects();
-  return useMemo(() => {
-    const bySlug = new Map<string, CloudProject>();
-    for (const project of projects) {
-      const slug = TrevizeSpaces.githubRepositorySlug(project.repositoryIdentity);
-      if (slug !== null && !bySlug.has(slug)) bySlug.set(slug, { slug, title: project.title });
-    }
-    return [...bySlug.values()].sort((a, b) => a.title.localeCompare(b.title));
-  }, [projects]);
+  const bySlug = new Map<string, CloudProject>();
+  for (const project of projects) {
+    const slug = TrevizeSpaces.githubRepositorySlug(project.repositoryIdentity);
+    if (slug !== null && !bySlug.has(slug)) bySlug.set(slug, { slug, title: project.title });
+  }
+  return [...bySlug.values()].sort((a, b) => a.title.localeCompare(b.title));
 }
 
 function Field(props: {
@@ -106,35 +100,26 @@ function OrchestratorModelField(props: {
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(props.environmentId)) ??
     EMPTY_SERVER_PROVIDERS;
-  const instanceEntries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-      ),
-    [providers, settings],
-  );
-  const fallback = useMemo(
-    () => scheduledTaskDefaultModel(settings, null, instanceEntries),
-    [settings, instanceEntries],
-  );
+  const instanceEntries = providerInstanceEntriesFor(providers, settings, null);
+  const fallback = scheduledTaskDefaultModel(settings, null, instanceEntries);
   const { value, onChange } = props;
-  const pick = useCallback(
-    (instanceId: ProviderInstanceId, model: string) => {
-      const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
-      if (entry) onChange({ instanceId, provider: entry.driverKind, model });
-    },
-    [instanceEntries, onChange],
-  );
+  const pick = (instanceId: ProviderInstanceId, model: string) => {
+    const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
+    if (entry) onChange({ instanceId, provider: entry.driverKind, model });
+  };
   // Start from the same default a new thread would use, so creating without
   // touching the picker still sends the model it shows.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- seeds the dialog's model once the server's providers load, which can be after mount
   useEffect(() => {
     if (value === null && fallback !== null) pick(fallback.instanceId, fallback.model);
   }, [fallback, pick, value]);
   const activeInstanceId = value?.instanceId ?? instanceEntries[0]?.instanceId;
   const activeModel = value?.model ?? "";
-  const modelOptionsByInstance = useMemo(
-    () => getCustomModelOptionsByInstance(settings, providers, activeInstanceId, activeModel),
-    [settings, providers, activeInstanceId, activeModel],
+  const modelOptionsByInstance = getCustomModelOptionsByInstance(
+    settings,
+    providers,
+    activeInstanceId,
+    activeModel,
   );
   if (activeInstanceId === undefined) return null;
   return (

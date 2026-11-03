@@ -1,15 +1,18 @@
 import { useAtomValue } from "@effect/atom-react";
 import { TrevizeMyTasks, TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ThreadProjection,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { CheckIcon, CircleDotIcon, CircleIcon, FileTextIcon, RotateCwIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useMemo } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 import { useDirectoryEntries } from "~/components/files/useDirectoryEntries";
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import { cn } from "~/lib/utils";
-import { deriveActivePlanState } from "~/session-logic";
 import { useThreadProjection } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import * as Trevize from "./commands";
@@ -27,17 +30,13 @@ export function useSpaceThreadTarget(
 ): TrevizeMyTasks.MyTaskTarget | null {
   const { environments: saved } = useEnvironments();
   const trevizeEnvironments = useAtomValue(Trevize.syncStateValueAtom).environments;
-  return useMemo(
-    () =>
-      thread === null
-        ? null
-        : TrevizeMyTasks.resolveMyTaskTarget(
-            thread,
-            trevizeEnvironments,
-            saved.map((environment) => environment.entry),
-          ),
-    [saved, thread, trevizeEnvironments],
-  );
+  return thread === null
+    ? null
+    : TrevizeMyTasks.resolveMyTaskTarget(
+        thread,
+        trevizeEnvironments,
+        saved.map((environment) => environment.entry),
+      );
 }
 
 export function savedThreadRef(target: TrevizeMyTasks.MyTaskTarget | null): ScopedThreadRef | null {
@@ -58,9 +57,9 @@ export function SpacePanel(props: {
   const space = spaces.find((candidate) => candidate.id === props.spaceId) ?? null;
   const orchestrator = space ? TrevizeSpaces.findOrchestratorThread(space, threads) : null;
   const orchestratorTarget = useSpaceThreadTarget(orchestrator);
-  const orchestratorRef = useMemo(() => savedThreadRef(orchestratorTarget), [orchestratorTarget]);
+  const orchestratorRef = savedThreadRef(orchestratorTarget);
   const projection = useThreadProjection(orchestratorRef)?.projection ?? null;
-  const plan = useMemo(() => deriveActivePlanState(projection, undefined), [projection]);
+  const plan = latestTodoList(projection);
   const filesEnvironmentId = orchestratorRef?.environmentId ?? props.fallbackEnvironmentId;
 
   return (
@@ -78,21 +77,21 @@ export function SpacePanel(props: {
           <p className="text-sm text-muted-foreground">No tasks yet</p>
         ) : (
           <ul className="space-y-1.5">
-            {keyedSteps(plan.steps).map(({ key, step }) => (
-              <li key={key} className="flex items-start gap-2 text-sm">
+            {plan.steps.map((step) => (
+              <li key={step.id} className="flex items-start gap-2 text-sm">
                 <span
                   className={cn(
                     "mt-0.5 flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5",
                     step.status === "completed"
                       ? "text-success"
-                      : step.status === "inProgress"
+                      : step.status === "running"
                         ? "text-primary"
                         : "text-muted-foreground/50",
                   )}
                 >
                   {step.status === "completed" ? (
                     <CheckIcon aria-label="Completed" />
-                  ) : step.status === "inProgress" ? (
+                  ) : step.status === "running" ? (
                     <CircleDotIcon aria-label="Running" />
                   ) : (
                     <CircleIcon aria-label="Pending" />
@@ -104,7 +103,7 @@ export function SpacePanel(props: {
                     step.status === "completed" && "text-muted-foreground",
                   )}
                 >
-                  {step.step}
+                  {step.text}
                 </span>
               </li>
             ))}
@@ -122,16 +121,6 @@ export function SpacePanel(props: {
   );
 }
 
-/** Steps can repeat, so each is keyed by its text and occurrence. */
-function keyedSteps<T extends { readonly step: string }>(steps: ReadonlyArray<T>) {
-  const seen = new Map<string, number>();
-  return steps.map((step) => {
-    const occurrence = seen.get(step.step) ?? 0;
-    seen.set(step.step, occurrence + 1);
-    return { key: `${step.step}#${occurrence}`, step };
-  });
-}
-
 function SharedFiles(props: {
   readonly environmentId: EnvironmentId;
   /** The orchestrator's last update; the list refreshes when it changes. */
@@ -143,12 +132,14 @@ function SharedFiles(props: {
     SPACE_SHARED_ROOT,
   );
   // `/shared` is small: load every folder so files show with their paths.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches each subfolder from the environment's server as the listing reveals it
   useEffect(() => {
     for (const entry of entries) {
       if (entry.kind === "directory") void load(entry.path);
     }
   }, [entries, load]);
   const onChanged = useEffectEvent(() => refresh());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the server's listing when the orchestrator reports new work
   useEffect(() => {
     if (props.changedAt !== null) onChanged();
   }, [props.changedAt]);
@@ -191,4 +182,10 @@ function SharedFiles(props: {
       )}
     </section>
   );
+}
+
+/** The orchestrator's latest todo list, the space's task list. */
+function latestTodoList(projection: OrchestrationV2ThreadProjection | null) {
+  const plan = projection?.plans.findLast((candidate) => candidate.kind === "todo_list");
+  return plan?.kind === "todo_list" && plan.steps.length > 0 ? plan : null;
 }

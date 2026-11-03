@@ -237,7 +237,7 @@ const makeHarness = Effect.fn(function* (input: {
     networkStatus: yield* SubscriptionRef.make<NetworkStatus>("online"),
     start: Effect.void,
     register: () => Effect.die("unused"),
-    registerPlatform: () => Effect.die("unused"),
+    assertKnownAddress: () => Effect.die("unused"),
     reconcilePlatform: () => Effect.die("unused"),
     remove: (environmentId) =>
       Effect.gen(function* () {
