@@ -53,6 +53,8 @@ export const layerTrevizeSettingsStore = Layer.succeed(
   TrevizeSync.TrevizeSettingsStore,
   TrevizeSync.TrevizeSettingsStore.of({
     get: Effect.sync(readSettings),
-    update: (f) => Effect.sync(() => updateStoredTrevizeSettings(f)),
+    update: Effect.fn("TrevizeSettingsStore.update")((f) =>
+      Effect.sync(() => updateStoredTrevizeSettings(f)),
+    ),
   }),
 );

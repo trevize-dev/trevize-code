@@ -214,29 +214,31 @@ const failureFromResponse = (response: HttpClientResponse.HttpClientResponse) =>
   );
 
 /** Sends an authenticated request; any HTTP status is a success here. */
-const send = (config: TrevizeApiConfig, request: HttpClientRequest.HttpClientRequest) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-    return yield* client
-      .execute(
-        request.pipe(
-          HttpClientRequest.bearerToken(config.apiKey.trim()),
-          HttpClientRequest.acceptJson,
-        ),
-      )
-      .pipe(
-        // Trevize's CORS policy does not allow `traceparent`/`b3`, so a
-        // propagated trace header would fail the browser preflight.
-        Effect.provideService(HttpClient.TracerPropagationEnabled, false),
-        Effect.mapError(
-          (cause) =>
-            new TrevizeApiError({
-              reason: "network",
-              message: `Could not reach Trevize: ${cause.message}`,
-            }),
-        ),
-      );
-  });
+const send = Effect.fn("clientRuntime.trevize.send")(function* (
+  config: TrevizeApiConfig,
+  request: HttpClientRequest.HttpClientRequest,
+) {
+  const client = yield* HttpClient.HttpClient;
+  return yield* client
+    .execute(
+      request.pipe(
+        HttpClientRequest.bearerToken(config.apiKey.trim()),
+        HttpClientRequest.acceptJson,
+      ),
+    )
+    .pipe(
+      // Trevize's CORS policy does not allow `traceparent`/`b3`, so a
+      // propagated trace header would fail the browser preflight.
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.mapError(
+        (cause) =>
+          new TrevizeApiError({
+            reason: "network",
+            message: `Could not reach Trevize: ${cause.message}`,
+          }),
+      ),
+    );
+});
 
 const decodeResponse = <S extends Schema.Constraint>(
   response: HttpClientResponse.HttpClientResponse,
@@ -254,18 +256,17 @@ const decodeResponse = <S extends Schema.Constraint>(
     ),
   );
 
-const execute = <S extends Schema.Constraint>(
+const execute = Effect.fn("clientRuntime.trevize.execute")(function* <S extends Schema.Constraint>(
   config: TrevizeApiConfig,
   request: HttpClientRequest.HttpClientRequest,
   schema: S,
-) =>
-  Effect.gen(function* () {
-    const response = yield* send(config, request);
-    if (response.status < 200 || response.status >= 300) {
-      return yield* failureFromResponse(response);
-    }
-    return yield* decodeResponse(response, schema);
-  });
+) {
+  const response = yield* send(config, request);
+  if (response.status < 200 || response.status >= 300) {
+    return yield* failureFromResponse(response);
+  }
+  return yield* decodeResponse(response, schema);
+});
 
 export const listWorkspaces = Effect.fn("clientRuntime.trevize.listWorkspaces")(function* (
   config: TrevizeApiConfig,
@@ -421,7 +422,7 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
       ),
       TrevizeWakeResult,
     ).pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       // An older Trevize without `wake`.
       Effect.catchIf(
         (error) => error.status === 404,

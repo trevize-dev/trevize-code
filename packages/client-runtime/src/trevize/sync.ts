@@ -77,10 +77,6 @@ export class TrevizeSettingsStore extends Context.Service<
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeSettingsStore") {}
 
-// ---------------------------------------------------------------------------
-// Reconciliation
-// ---------------------------------------------------------------------------
-
 export type TrevizeSyncAction =
   /** Not saved on this device (or its credential was rejected) and running: pair it. */
   | { readonly _tag: "Pair"; readonly environment: TrevizeEnvironment }
@@ -157,10 +153,6 @@ export function planTrevizeSync(input: TrevizeSyncInput): TrevizeSyncPlan {
   }
   return { actions, managedOrigins: [...managed].sort() };
 }
-
-// ---------------------------------------------------------------------------
-// Service
-// ---------------------------------------------------------------------------
 
 export interface TrevizeCloudSyncState {
   readonly signedIn: boolean;
@@ -279,7 +271,7 @@ function isCredentialRejected(state: SupervisorConnectionState) {
   );
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const settingsStore = yield* TrevizeSettingsStore;

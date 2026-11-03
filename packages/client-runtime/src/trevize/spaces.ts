@@ -208,11 +208,7 @@ export function defaultSpaceWorkspaceId(
   return available[0] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Tabs: the space chat first, then opened agents. The active tab lives in the
-// route; `null` is the orchestrator.
-// ---------------------------------------------------------------------------
-
+/** Space tabs: the space chat first, then opened agents. The active tab lives in the route; `null` is the orchestrator. */
 export function openSpaceTab(tabs: ReadonlyArray<string>, threadId: string): ReadonlyArray<string> {
   return tabs.includes(threadId) ? tabs : [...tabs, threadId];
 }

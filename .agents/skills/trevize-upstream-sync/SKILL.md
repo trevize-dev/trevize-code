@@ -75,6 +75,17 @@ Pattern by pattern, the conflicts we have seen:
   `ChatView.tsx` `titleRow` and the Trevize wake hook, `connection/routes.ts` route-learning
   opt-out). Keep our behavior and adopt upstream's new names and props around it
   (e.g. `ChatHeader` callbacks became `...Stable`). Drop variables upstream stopped using.
+- **Upstream moved or deleted the file our change lived in.** Big hunks where one side is
+  a whole block and the other is empty usually mean upstream split, moved, or deleted the
+  code. Take theirs, then re-apply the fork's delta (`git diff <previous tag> main -- <file>`)
+  wherever the code went. In v0.1.6: `LegacySidebar.tsx` was deleted (only `Sidebar.tsx`
+  remains); user rows moved to `chat/TimelineUserMessageRow.tsx` and
+  `chat/UserMessageContextChips.tsx`; right-panel content to
+  `chat/RightPanelSurfaceContent.tsx`; `SavedBackendListRow` to
+  `settings/SavedEnvironmentRows.tsx`. Tests upstream deleted (it prunes low-signal tests
+  in bulk) stay deleted, even when we had rebranded them.
+- **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
+  ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 
 ## 4. Fix breakage outside the conflicts
 
@@ -82,13 +93,26 @@ Clean merges still break. Seen so far:
 
 - Upstream removes an import once its own usage is gone, but our code still uses it
   (`isLearned` in `connection/registry.ts`).
-- Upstream changes signatures of helpers that `apps/web/src/trevize/*` calls
-  (`applyProviderInstanceSettings` gained `projectId`, `ProviderModelPicker` requires
-  `environmentId`). Copy how upstream's own callers adapted.
+- Upstream changes or deletes helpers that `apps/web/src/trevize/*` calls
+  (`applyProviderInstanceSettings` gained `projectId`; `sortProviderInstanceEntries` became
+  `providerInstanceEntriesFor`; `deriveActivePlanState` is gone, so read
+  `projection.plans` directly). Copy how upstream's own callers adapted. Typecheck finds these.
+- Test doubles of upstream services drift (`EnvironmentRegistry` lost `registerPlatform`
+  and gained `assertKnownAddress`), and so do test helpers (`eventuallyState` became
+  `awaitState`).
+- Upstream keeps adding lint rules (v0.1.6: React Compiler `no-manual-memo`,
+  `no-unreasoned-state-sync`, `no-low-value-comments`, `prefer-effect-fn`) and CI lints the
+  whole repo, so every fork file must meet them, not just the ones the merge touched. Run
+  `vp lint` at the root and fix all errors in this PR. Kept effects get
+  `// oxlint-disable-next-line t3code/no-unreasoned-state-sync -- <what it syncs and why>`.
+- Upstream tests with hard-coded dates rot (v0.1.6: usage fixtures fell out of the 92-day
+  window). If a test fails in a file the fork never touched, look for an upstream fix after
+  the tag (`git log <tag>..upstream/main -- <file>`) and cherry-pick it with `-x`.
 
 ## 5. Verify
 
-Typecheck per package, keeping only real errors (the Effect plugin prints many suggestions):
+Typecheck per package. CI fails on Effect plugin diagnostics (`error TS377…`) too, so treat
+every `error TS` line as real:
 
 ```bash
 for p in packages/contracts packages/client-runtime apps/web apps/desktop apps/server apps/mobile; do
@@ -118,8 +142,8 @@ Known macOS-only failures, not merge-related:
 To check whether a failure is upstream's, copy the pristine files from the tag next to ours
 under a temporary name, run them, and delete them.
 
-Lint the files you resolved by hand with `vp lint <files>` (warnings in `ChatView.tsx` are
-upstream's). The commit hook runs `vp fmt`.
+Run `vp lint` at the root; it must report 0 errors (warnings are upstream's). The commit
+hook runs `vp fmt`. After pushing, check `gh pr checks`; the PR isn't done until CI is green.
 
 ## 6. Commit and PR
 
@@ -136,3 +160,8 @@ if a pattern changed. Prune entries that no longer apply.
 - **v0.1.0 (2026-10-17).** First tag sync; we had diverged since 2026-10-08 (574 upstream
   commits). 14 conflicts, plus two breakages outside the conflicts (`isLearned` import,
   NewSpaceDialog signatures). Upstream renamed Alpha → Beta. PR #12.
+- **v0.1.6 (2026-11-03).** 3,071 upstream commits, 33 conflicts. Most came from upstream
+  deleting tests and moving code (see "moved or deleted" above). HTTPS-paired tokens no longer
+  go over plain HTTP, so route tests need HTTPS sample addresses. New lint rules and Effect
+  diagnostics turned CI red across ten untouched Trevize files; fixed in the same PR. A dated
+  usage test needed upstream's clock-pinning fix cherry-picked.
