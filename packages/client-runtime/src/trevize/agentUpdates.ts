@@ -5,11 +5,9 @@ import * as Schema from "effect/Schema";
 import type { TrevizeEnvironment, TrevizeSpace, TrevizeThread } from "./api.ts";
 
 /**
- * Agent updates: Trevize delivers a sub-agent's progress to its space's
- * orchestrator thread, and the orchestrator's messages to an agent, as
- * ordinary user messages carrying one `trevize-agent` context record. Upstream
- * t3 keeps the record as an unknown kind; clients that know it draw the
- * message as a notification instead of a user bubble.
+ * Trevize relays messages between a space's orchestrator and its agents as user
+ * messages carrying one `trevize-agent` context record. Upstream keeps it as an
+ * unknown kind; clients that know it draw a notification instead of a bubble.
  */
 
 export const TREVIZE_AGENT_CONTEXT_KIND = "trevize-agent";

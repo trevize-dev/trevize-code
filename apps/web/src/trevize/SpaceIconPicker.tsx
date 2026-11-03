@@ -23,9 +23,9 @@ export interface SpaceIconValue {
 }
 
 const CELL_CLASS =
-  "flex aspect-square items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent";
+  "flex aspect-square items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-pressed:bg-accent";
 const SWATCH_CLASS =
-  "flex size-6 items-center justify-center rounded-full border border-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-foreground/64";
+  "flex size-6 items-center justify-center rounded-full border border-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-pressed:border-foreground/64";
 
 const CUSTOM_SWATCH_GRADIENT = "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)";
 

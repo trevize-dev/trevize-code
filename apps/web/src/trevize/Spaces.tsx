@@ -4,7 +4,6 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { useMemo } from "react";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 
@@ -47,39 +46,33 @@ export interface SpacesState {
 export function useSpaceEnvironmentIds(): ReadonlySet<EnvironmentId> {
   const trevizeEnvironments = useAtomValue(Trevize.syncStateValueAtom).environments;
   const { environments: saved } = useEnvironments();
-  return useMemo(
-    () =>
-      TrevizeSpaces.spaceEnvironmentIds(
-        trevizeEnvironments,
-        saved.map((environment) => environment.entry),
-      ),
-    [saved, trevizeEnvironments],
+  return TrevizeSpaces.spaceEnvironmentIds(
+    trevizeEnvironments,
+    saved.map((environment) => environment.entry),
   );
 }
 
 /** Spaces from the Trevize Cloud sync loop. */
 export function useSpaces(): SpacesState {
   const sync = useAtomValue(Trevize.syncStateValueAtom);
-  return useMemo(() => {
-    const available = sync.signedIn && sync.spaceWorkspaceIds.length > 0;
-    const activity = new Map(
-      sync.spaces.map((space) => [
-        space.id,
-        TrevizeSpaces.spaceActivityAt(space, sync.spaceThreads, sync.environments),
-      ]),
-    );
-    return {
-      available,
-      spaces: available
-        ? [...sync.spaces].sort((a, b) =>
-            (activity.get(b.id) ?? "").localeCompare(activity.get(a.id) ?? ""),
-          )
-        : [],
-      threads: sync.spaceThreads,
-      environments: sync.environments,
-      loaded: sync.lastSyncedAt !== null,
-    };
-  }, [sync]);
+  const available = sync.signedIn && sync.spaceWorkspaceIds.length > 0;
+  const activity = new Map(
+    sync.spaces.map((space) => [
+      space.id,
+      TrevizeSpaces.spaceActivityAt(space, sync.spaceThreads, sync.environments),
+    ]),
+  );
+  return {
+    available,
+    spaces: available
+      ? [...sync.spaces].sort((a, b) =>
+          (activity.get(b.id) ?? "").localeCompare(activity.get(a.id) ?? ""),
+        )
+      : [],
+    threads: sync.spaceThreads,
+    environments: sync.environments,
+    loaded: sync.lastSyncedAt !== null,
+  };
 }
 
 /** Opens the New space dialog from anywhere (sidebar, command palette). */

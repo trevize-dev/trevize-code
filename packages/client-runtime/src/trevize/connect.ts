@@ -9,11 +9,9 @@ import { connectionRoutes } from "../connection/routes.ts";
 import { connectWhenReady, type TrevizeApiConfig, type TrevizeEnvironment } from "./api.ts";
 
 /**
- * The Trevize credential lives in the connection credential store (desktop
- * secure storage, the browser's connection catalog, the mobile keychain) under
- * this id. It is either a pasted API key or the session token a device sign-in
- * returned; both are bearer tokens for the Trevize API. No route references it,
- * so catalog route cleanup never drops it.
+ * Credential-store id for the Trevize bearer token (a pasted API key or a device
+ * sign-in session token). No route references it, so catalog route cleanup never
+ * drops it.
  */
 const TREVIZE_API_KEY_CREDENTIAL_ID = "trevize:api-key";
 
@@ -39,11 +37,10 @@ export const clearTrevizeApiKey = Effect.fn("clientRuntime.trevize.clearApiKey")
 });
 
 /**
- * Connects a Trevize environment: asks Trevize for a one-time pairing token
- * (waking the sandbox if needed), then redeems it with the ordinary pairing
- * flow. The saved route is keyed by the environment's stable gateway origin,
- * so connecting again re-pairs and replaces the credential instead of adding
- * a second environment.
+ * Gets a one-time pairing token from Trevize (waking the sandbox if needed) and
+ * redeems it with the ordinary pairing flow. The route is keyed by the stable
+ * gateway origin, so reconnecting replaces the credential instead of adding a
+ * second environment.
  */
 export const connectTrevizeEnvironment = Effect.fn("clientRuntime.trevize.connectEnvironment")(
   function* (input: {

@@ -333,8 +333,7 @@ const makeHarness = Effect.fn(function* (input: {
         Layer.succeed(
           ConnectionCredentialStore.ConnectionCredentialStore,
           ConnectionCredentialStore.make({
-            get: () =>
-              Effect.succeed(Option.some(new BearerConnectionCredential({ token: "tvz" }))),
+            get: () => Effect.succeedSome(new BearerConnectionCredential({ token: "tvz" })),
             put: () => Effect.void,
             remove: () => Effect.void,
           }),

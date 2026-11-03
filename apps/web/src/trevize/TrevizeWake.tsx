@@ -47,6 +47,7 @@ export function useWakeSleepingTrevizeEnvironment(
   const sleep = useTrevizeSleepState(environmentId, connected);
   const wake = useAtomCommand(Trevize.wakeEnvironment, { reportFailure: false });
   const attempted = useRef<EnvironmentId | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks Trevize to wake the environment when it is seen sleeping
   useEffect(() => {
     // Forget the attempt once it woke, so a later sleep wakes again.
     if (sleep === null) attempted.current = null;

@@ -7,12 +7,9 @@ import * as Schema from "effect/Schema";
 import { normalizeTrevizeBaseUrl, TrevizeApiError } from "./api.ts";
 
 /**
- * Sign-in to Trevize with the OAuth 2.0 Device Authorization Grant (RFC 8628),
- * the flow the Trevize CLI uses. The client shows a short code, the user
- * approves it on Trevize's `/device` page in any browser, and the client
- * polls for a session token. It needs no redirect URI, so it works the same
- * from app.t3.codes, `t3 serve` on any LAN or tailnet origin, desktop and
- * mobile. The token is a bearer credential for `/api/v1`, like an API key.
+ * Trevize sign-in via the OAuth 2.0 Device Authorization Grant (RFC 8628). It
+ * needs no redirect URI, so it works from any origin, desktop, and mobile. The
+ * resulting token is a bearer credential for `/api/v1`, like an API key.
  */
 
 /** Trevize's trusted public client id for this app. */
@@ -63,27 +60,26 @@ function authUrl(baseUrl: string, path: string): string {
   return `${normalizeTrevizeBaseUrl(baseUrl)}/api/auth${path}`;
 }
 
-const postJson = (url: string, body: object) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-    return yield* client
-      .execute(
-        HttpClientRequest.post(url).pipe(
-          HttpClientRequest.bodyJsonUnsafe(body),
-          HttpClientRequest.acceptJson,
-        ),
-      )
-      .pipe(
-        Effect.provideService(HttpClient.TracerPropagationEnabled, false),
-        Effect.mapError(
-          (cause) =>
-            new TrevizeApiError({
-              reason: "network",
-              message: `Could not reach Trevize: ${cause.message}`,
-            }),
-        ),
-      );
-  });
+const postJson = Effect.fn("clientRuntime.trevize.postJson")(function* (url: string, body: object) {
+  const client = yield* HttpClient.HttpClient;
+  return yield* client
+    .execute(
+      HttpClientRequest.post(url).pipe(
+        HttpClientRequest.bodyJsonUnsafe(body),
+        HttpClientRequest.acceptJson,
+      ),
+    )
+    .pipe(
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.mapError(
+        (cause) =>
+          new TrevizeApiError({
+            reason: "network",
+            message: `Could not reach Trevize: ${cause.message}`,
+          }),
+      ),
+    );
+});
 
 const decode =
   <S extends Schema.Constraint>(schema: S, status: number) =>

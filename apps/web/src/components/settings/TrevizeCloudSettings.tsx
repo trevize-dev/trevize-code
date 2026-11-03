@@ -13,7 +13,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { readLocalApi } from "~/localApi";
@@ -97,6 +97,7 @@ export function TrevizeCloudSettings() {
   const loadApiKey = useAtomCommand(Trevize.loadApiKey, { reportFailure: false });
   const signOut = useAtomCommand(Trevize.signOut, { reportFailure: false });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the saved Trevize key from the credential store on mount
   useEffect(() => {
     let active = true;
     void loadApiKey().then((result) => {
@@ -107,10 +108,7 @@ export function TrevizeCloudSettings() {
     };
   }, [loadApiKey]);
 
-  const config = useMemo(
-    () => (apiKey ? { baseUrl: settings.baseUrl, apiKey } : null),
-    [apiKey, settings.baseUrl],
-  );
+  const config = apiKey ? { baseUrl: settings.baseUrl, apiKey } : null;
 
   return (
     <SettingsSection
@@ -242,6 +240,7 @@ function TrevizeSignInForm({
   const pendingSignIn = useRef<AbortController | null>(null);
 
   // Stop polling when the form goes away.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the pending device sign-in on unmount
   useEffect(() => () => pendingSignIn.current?.abort(), []);
 
   const normalizedUrl = (): string | null => {
@@ -437,6 +436,7 @@ function TrevizeWorkspaceEnvironments({
       }
     },
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the account's workspaces from Trevize
   useEffect(() => {
     let active = true;
     void listWorkspaces(config).then((result) => {
@@ -453,7 +453,7 @@ function TrevizeWorkspaceEnvironments({
     };
   }, [config, listWorkspaces]);
 
-  const refresh = useCallback(async () => {
+  const refresh = async () => {
     if (!workspaceId) return;
     await listEnvironments({ config, workspaceId }).then((result) => {
       if (result._tag === "Success") {
@@ -466,8 +466,9 @@ function TrevizeWorkspaceEnvironments({
         setLoadError(failureMessage(result, "Could not load Trevize environments."));
       }
     });
-  }, [config, listEnvironments, workspaceId]);
+  };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the selected workspace's environments from Trevize
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -475,6 +476,7 @@ function TrevizeWorkspaceEnvironments({
   // Poll only while an environment is on its way up, so the status settles on its own.
   const hasTransitional =
     environments?.some((environment) => TRANSITIONAL_STATUSES.has(environment.status)) ?? false;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls Trevize while an environment is starting or stopping
   useEffect(() => {
     if (!hasTransitional) return;
     const timer = setInterval(() => void refresh(), STATUS_REFRESH_INTERVAL_MS);
@@ -667,6 +669,7 @@ function NewTrevizeEnvironmentDialog({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the workspace's repositories from Trevize when the dialog opens
   useEffect(() => {
     if (!open) return;
     let active = true;
