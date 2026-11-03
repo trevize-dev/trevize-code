@@ -100,14 +100,19 @@ Clean merges still break. Seen so far:
 - Test doubles of upstream services drift (`EnvironmentRegistry` lost `registerPlatform`
   and gained `assertKnownAddress`), and so do test helpers (`eventuallyState` became
   `awaitState`).
-- The pre-commit hook (`vp staged`) runs fmt, lint, and knip on every staged file. Upstream
-  keeps adding lint rules (v0.1.6: React Compiler `no-manual-memo`,
-  `no-unreasoned-state-sync`), so fork files touched by the merge must meet them before
-  the merge commits. Untouched fork files can lag; fix them in a separate PR.
+- Upstream keeps adding lint rules (v0.1.6: React Compiler `no-manual-memo`,
+  `no-unreasoned-state-sync`, `no-low-value-comments`, `prefer-effect-fn`) and CI lints the
+  whole repo, so every fork file must meet them, not just the ones the merge touched. Run
+  `vp lint` at the root and fix all errors in this PR. Kept effects get
+  `// oxlint-disable-next-line t3code/no-unreasoned-state-sync -- <what it syncs and why>`.
+- Upstream tests with hard-coded dates rot (v0.1.6: usage fixtures fell out of the 92-day
+  window). If a test fails in a file the fork never touched, look for an upstream fix after
+  the tag (`git log <tag>..upstream/main -- <file>`) and cherry-pick it with `-x`.
 
 ## 5. Verify
 
-Typecheck per package, keeping only real errors (the Effect plugin prints many suggestions):
+Typecheck per package. CI fails on Effect plugin diagnostics (`error TS377…`) too, so treat
+every `error TS` line as real:
 
 ```bash
 for p in packages/contracts packages/client-runtime apps/web apps/desktop apps/server apps/mobile; do
@@ -137,8 +142,8 @@ Known macOS-only failures, not merge-related:
 To check whether a failure is upstream's, copy the pristine files from the tag next to ours
 under a temporary name, run them, and delete them.
 
-Lint the files you resolved by hand with `vp lint <files>` (warnings in `ChatView.tsx` are
-upstream's). The commit hook runs `vp fmt`.
+Run `vp lint` at the root; it must report 0 errors (warnings are upstream's). The commit
+hook runs `vp fmt`. After pushing, check `gh pr checks`; the PR isn't done until CI is green.
 
 ## 6. Commit and PR
 
@@ -157,5 +162,6 @@ if a pattern changed. Prune entries that no longer apply.
   NewSpaceDialog signatures). Upstream renamed Alpha → Beta. PR #12.
 - **v0.1.6 (2026-11-03).** 3,071 upstream commits, 33 conflicts. Most came from upstream
   deleting tests and moving code (see "moved or deleted" above). HTTPS-paired tokens no longer
-  go over plain HTTP, so route tests need HTTPS sample addresses. New lint rules blocked the
-  commit until `SpacePanel.tsx` and `NewSpaceDialog.tsx` were cleaned up.
+  go over plain HTTP, so route tests need HTTPS sample addresses. New lint rules and Effect
+  diagnostics turned CI red across ten untouched Trevize files; fixed in the same PR. A dated
+  usage test needed upstream's clock-pinning fix cherry-picked.
