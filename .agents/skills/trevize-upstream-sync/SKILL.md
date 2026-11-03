@@ -75,6 +75,17 @@ Pattern by pattern, the conflicts we have seen:
   `ChatView.tsx` `titleRow` and the Trevize wake hook, `connection/routes.ts` route-learning
   opt-out). Keep our behavior and adopt upstream's new names and props around it
   (e.g. `ChatHeader` callbacks became `...Stable`). Drop variables upstream stopped using.
+- **Upstream moved or deleted the file our change lived in.** Big hunks where one side is
+  a whole block and the other is empty usually mean upstream split, moved, or deleted the
+  code. Take theirs, then re-apply the fork's delta (`git diff <previous tag> main -- <file>`)
+  wherever the code went. In v0.1.6: `LegacySidebar.tsx` was deleted (only `Sidebar.tsx`
+  remains); user rows moved to `chat/TimelineUserMessageRow.tsx` and
+  `chat/UserMessageContextChips.tsx`; right-panel content to
+  `chat/RightPanelSurfaceContent.tsx`; `SavedBackendListRow` to
+  `settings/SavedEnvironmentRows.tsx`. Tests upstream deleted (it prunes low-signal tests
+  in bulk) stay deleted, even when we had rebranded them.
+- **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
+  ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 
 ## 4. Fix breakage outside the conflicts
 
@@ -82,9 +93,17 @@ Clean merges still break. Seen so far:
 
 - Upstream removes an import once its own usage is gone, but our code still uses it
   (`isLearned` in `connection/registry.ts`).
-- Upstream changes signatures of helpers that `apps/web/src/trevize/*` calls
-  (`applyProviderInstanceSettings` gained `projectId`, `ProviderModelPicker` requires
-  `environmentId`). Copy how upstream's own callers adapted.
+- Upstream changes or deletes helpers that `apps/web/src/trevize/*` calls
+  (`applyProviderInstanceSettings` gained `projectId`; `sortProviderInstanceEntries` became
+  `providerInstanceEntriesFor`; `deriveActivePlanState` is gone, so read
+  `projection.plans` directly). Copy how upstream's own callers adapted. Typecheck finds these.
+- Test doubles of upstream services drift (`EnvironmentRegistry` lost `registerPlatform`
+  and gained `assertKnownAddress`), and so do test helpers (`eventuallyState` became
+  `awaitState`).
+- The pre-commit hook (`vp staged`) runs fmt, lint, and knip on every staged file. Upstream
+  keeps adding lint rules (v0.1.6: React Compiler `no-manual-memo`,
+  `no-unreasoned-state-sync`), so fork files touched by the merge must meet them before
+  the merge commits. Untouched fork files can lag; fix them in a separate PR.
 
 ## 5. Verify
 
@@ -136,3 +155,7 @@ if a pattern changed. Prune entries that no longer apply.
 - **v0.1.0 (2026-10-17).** First tag sync; we had diverged since 2026-10-08 (574 upstream
   commits). 14 conflicts, plus two breakages outside the conflicts (`isLearned` import,
   NewSpaceDialog signatures). Upstream renamed Alpha → Beta. PR #12.
+- **v0.1.6 (2026-11-03).** 3,071 upstream commits, 33 conflicts. Most came from upstream
+  deleting tests and moving code (see "moved or deleted" above). HTTPS-paired tokens no longer
+  go over plain HTTP, so route tests need HTTPS sample addresses. New lint rules blocked the
+  commit until `SpacePanel.tsx` and `NewSpaceDialog.tsx` were cleaned up.
