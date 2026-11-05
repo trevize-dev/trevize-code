@@ -2742,6 +2742,8 @@ export default function ChatView(props: ChatViewProps) {
           (env) => env.environmentId === currentId,
         );
         const next = logicalProjectEnvironments[(index + 1) % logicalProjectEnvironments.length];
+        // Cloud is a "Run on" choice too: cycling to a machine leaves it.
+        if (envMode === "cloud") onEnvModeChangeStable("local");
         if (next) onEnvironmentChangeStable(next.environmentId);
       },
       "thread.steerQueuedMessage": ({ event }) =>

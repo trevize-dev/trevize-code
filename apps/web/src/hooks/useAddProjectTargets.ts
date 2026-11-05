@@ -5,6 +5,7 @@ import { AuthSourceControlWriteScope, resolveEnvironmentMachineKind } from "@t3t
 import type { EnvironmentOption } from "../components/BranchToolbar.logic";
 import { useEnvironments } from "../state/environments";
 import { useEnvironmentsWithScope } from "../state/session";
+import { useSpaceEnvironmentIds } from "../trevize/Spaces";
 
 export type AddProjectTarget = Pick<EnvironmentOption, "environmentId" | "label" | "machine">;
 
@@ -19,6 +20,8 @@ export function useAddProjectTargets(
 ): readonly AddProjectTarget[] {
   const { environments } = useEnvironments();
   const canClone = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
+  // A space's machines belong to the space, not to projects added by hand.
+  const spaceEnvironmentIds = useSpaceEnvironmentIds();
   if (!project?.repositoryIdentity?.locator.remoteUrl) return [];
   const hasProject = new Set([
     project.environmentId,
@@ -28,6 +31,7 @@ export function useAddProjectTargets(
     .filter(
       (environment) =>
         !hasProject.has(environment.environmentId) &&
+        !spaceEnvironmentIds.has(environment.environmentId) &&
         canClone.has(environment.environmentId) &&
         canCreateProjectInEnvironment(environment.connection.phase) &&
         environment.serverConfig !== null,
