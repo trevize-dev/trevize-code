@@ -33,7 +33,7 @@ interface BranchToolbarEnvModeSelectorProps {
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
   /** Offers "Cloud": this is a draft of a project Trevize Cloud can run. */
-  cloudAvailable?: boolean;
+  cloudAvailable: boolean;
   previousWorktreeLabel?: string | null;
   previousWorktreeBranch?: string | null;
   onUsePreviousWorktree?: () => void;
@@ -45,7 +45,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
-  cloudAvailable = false,
+  cloudAvailable,
   previousWorktreeLabel,
   previousWorktreeBranch = null,
   onUsePreviousWorktree,

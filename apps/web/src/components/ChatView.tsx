@@ -2926,6 +2926,7 @@ export default function ChatView(props: ChatViewProps) {
     phase,
     runtimeMode,
     sendEnvMode,
+    cloudRepository,
     startFromOrigin,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,

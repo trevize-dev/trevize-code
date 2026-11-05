@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { ThreadId } from "@t3tools/contracts";
 
 /**
  * Client for the Trevize public API (`/api/v1`). Trevize runs T3 servers in
@@ -462,22 +463,13 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
   }
 });
 
-const DispatchedThread = Schema.Struct({
-  /** The Trevize thread id. */
-  id: Schema.String,
-  /** The thread id on the environment's own T3 server. */
-  threadId: Schema.String,
-  projectId: Schema.String,
-  deepLinkUrl: Schema.String,
-  existing: Schema.Boolean,
-});
-export type TrevizeDispatchedThread = typeof DispatchedThread.Type;
+/** Only the runtime thread id matters to the client: it opens the thread with it. */
+const DispatchedThread = Schema.Struct({ threadId: ThreadId });
 
 export interface TrevizeThreadDispatchInput {
   /** `owner/repo` or a Trevize repository id; must be one of the environment's. */
   readonly repositoryId: string;
   readonly prompt: string;
-  readonly title?: string;
   /** A T3 provider instance id, e.g. `codex`; the environment's default otherwise. */
   readonly providerInstanceId?: string;
   readonly model?: string;
@@ -499,14 +491,12 @@ export const dispatchThread = Effect.fn("clientRuntime.trevize.dispatchThread")(
   environmentId: string,
   input: TrevizeThreadDispatchInput,
 ) {
-  const title = input.title?.trim();
   const request = HttpClientRequest.post(
     apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/threads`),
   ).pipe(
     HttpClientRequest.bodyJsonUnsafe({
       repositoryId: input.repositoryId,
       prompt: input.prompt,
-      ...(title ? { title } : {}),
       ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.dispatchKey ? { dispatchKey: input.dispatchKey } : {}),

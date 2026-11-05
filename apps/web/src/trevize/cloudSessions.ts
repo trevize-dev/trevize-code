@@ -9,15 +9,15 @@ import { useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { buildThreadRouteParams } from "~/threadRoutes";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { launchSession, syncStateValueAtom } from "./commands";
 
 /** Signed in to Trevize Cloud with a workspace that has environments enabled. */
-const cloudSessionsEnabledAtom = Atom.make((get) => {
-  const sync = get(syncStateValueAtom);
-  return sync.signedIn && sync.spaceWorkspaceIds.length > 0;
-}).pipe(Atom.withLabel("trevize-cloud-sessions-enabled"));
+const cloudSessionsEnabledAtom = Atom.make((get) =>
+  TrevizeSync.hasCloudEnvironments(get(syncStateValueAtom)),
+).pipe(Atom.withLabel("trevize-cloud-sessions-enabled"));
 
 /**
  * The `owner/repo` a cloud session for this project would clone, or null when
@@ -52,13 +52,7 @@ export function useLaunchCloudSession() {
     const result = await run(input);
     if (result._tag === "Success") {
       const open = () =>
-        navigate({
-          to: "/$environmentId/$threadId",
-          params: {
-            environmentId: result.value.environmentId,
-            threadId: result.value.threadId,
-          },
-        });
+        navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(result.value) });
       if (stillWanted()) {
         toastManager.close(toastId);
         await open();
@@ -68,7 +62,7 @@ export function useLaunchCloudSession() {
           stackedThreadToast({
             type: "success",
             title: "Cloud session started",
-            description: TrevizeSync.cloudSessionTitle(input),
+            description: TrevizeSync.cloudSessionTitle(input.prompt),
             timeout: 20_000,
             actionProps: {
               children: "Open",

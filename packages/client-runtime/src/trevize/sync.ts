@@ -1,4 +1,5 @@
-import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { truncate } from "@t3tools/shared/String";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -192,23 +193,24 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
 export interface LaunchSessionInput {
   /** `owner/repo`, cloned into the new environment. */
   readonly repository: string;
-  /** The thread's first message. */
+  /** The thread's first message; its first line names the environment. */
   readonly prompt: string;
-  /** Names the environment; defaults to the prompt's first line. */
-  readonly title?: string;
   /** A T3 provider instance id, e.g. `codex`. */
   readonly providerInstanceId?: string;
   readonly model?: string;
 }
 
-/** The environment's title: the given one, else the prompt's first line, shortened. */
-export function cloudSessionTitle(input: Pick<LaunchSessionInput, "title" | "prompt">): string {
-  const title = input.title?.trim() || input.prompt.trim().split("\n", 1)[0]?.trim() || "";
-  if (title.length === 0) return "Cloud session";
-  return title.length > 80 ? `${title.slice(0, 79).trimEnd()}…` : title;
+/** A cloud session environment's title: the prompt's first line, shortened. */
+export function cloudSessionTitle(prompt: string): string {
+  return truncate(prompt.trim().split("\n", 1)[0] ?? "", 80) || "Cloud session";
 }
 
-const isThreadId = Schema.is(ThreadId);
+/** Signed in, with a workspace whose Trevize offers environments (and so spaces). */
+export function hasCloudEnvironments(
+  state: Pick<TrevizeCloudSyncState, "signedIn" | "spaceWorkspaceIds">,
+): boolean {
+  return state.signedIn && state.spaceWorkspaceIds.length > 0;
+}
 
 /** What a new space needs; the workspace defaults to the one picked in settings. */
 export interface CreateSpaceInput extends Omit<TrevizeSpaceInput, "workspaceId"> {
@@ -567,6 +569,20 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     }).pipe(Effect.ensuring(setWaking(environmentId, false)));
   });
 
+  /** Waits for a Trevize environment and pairs this device with it. */
+  const connect = (
+    config: TrevizeApiConfig,
+    environment: Pick<TrevizeEnvironment, "id" | "title">,
+  ) =>
+    connectTrevizeEnvironment({ config, environment }).pipe(
+      Effect.provideContext(context),
+      Effect.mapError((error) =>
+        error._tag === "TrevizeApiError"
+          ? error
+          : new TrevizeApiError({ reason: "request", message: error.message }),
+      ),
+    );
+
   const openTask = Effect.fn("TrevizeCloudSync.openTask")(function* (
     task: Pick<TrevizeThread, "environmentId" | "runtimeThreadId">,
   ) {
@@ -587,17 +603,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
             message: "Sign in to Trevize Cloud to open this task.",
           });
         }
-        const environmentId = yield* connectTrevizeEnvironment({
-          config: loaded.value.config,
-          environment: target.environment,
-        }).pipe(
-          Effect.provideContext(context),
-          Effect.mapError((error) =>
-            error._tag === "TrevizeApiError"
-              ? error
-              : new TrevizeApiError({ reason: "request", message: error.message }),
-          ),
-        );
+        const environmentId = yield* connect(loaded.value.config, target.environment);
         yield* syncNow;
         return { environmentId, threadId: target.threadId };
       }
@@ -680,16 +686,9 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     const environment = yield* createTrevizeEnvironment(config, {
       workspaceId,
       repositoryIds: [input.repository],
-      title: cloudSessionTitle(input),
+      title: cloudSessionTitle(input.prompt),
     }).pipe(Effect.provideContext(context));
-    const environmentId = yield* connectTrevizeEnvironment({ config, environment }).pipe(
-      Effect.provideContext(context),
-      Effect.mapError((error) =>
-        error._tag === "TrevizeApiError"
-          ? error
-          : new TrevizeApiError({ reason: "request", message: error.message }),
-      ),
-    );
+    const environmentId = yield* connect(config, environment);
     const dispatched = yield* dispatchThread(config, environment.id, {
       repositoryId: input.repository,
       prompt: input.prompt,
@@ -698,12 +697,6 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       dispatchKey: `cloud-session:${environment.id}`,
     }).pipe(Effect.provideContext(context));
     yield* syncNow;
-    if (!isThreadId(dispatched.threadId)) {
-      return yield* new TrevizeApiError({
-        reason: "decode",
-        message: "Trevize sent an invalid thread id.",
-      });
-    }
     return { environmentId, threadId: dispatched.threadId };
   });
 
