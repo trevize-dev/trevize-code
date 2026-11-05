@@ -5,11 +5,13 @@ import { useAtomValue } from "@effect/atom-react";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { PlusIcon, ScaleIcon } from "lucide-react";
+import { CloudIcon, PlusIcon, ScaleIcon } from "lucide-react";
 import { memo } from "react";
 
 import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { CONNECT_CLOUD_SELECT_VALUE, CloudItemContent, cloudSelectValue } from "./CloudItemContent";
+import { openTrevizePage, type CloudPlacement } from "../trevize/cloudSessions";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
   Select,
@@ -28,6 +30,12 @@ interface BranchToolbarEnvironmentSelectorProps {
   availableEnvironments: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
   onAddToMachine?: (() => void) | undefined;
+  /** Offers "Cloud": this is a draft of a project Trevize Cloud can run. */
+  cloud?: CloudPlacement | null;
+  /** The draft starts in the cloud instead of on a machine. */
+  cloudSelected?: boolean;
+  /** Picks the cloud, or leaves it when the user picks a machine. */
+  onCloudSelectedChange?: (selected: boolean) => void;
 }
 
 // Action values cannot collide with server-minted environment IDs.
@@ -43,6 +51,9 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   availableEnvironments,
   onEnvironmentChange,
   onAddToMachine,
+  cloud = null,
+  cloudSelected = false,
+  onCloudSelectedChange,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
@@ -60,12 +71,23 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       value: environmentValue(env.environmentId),
       label: env.label,
     })),
+    ...(cloud
+      ? [
+          {
+            value: cloudSelectValue(cloud),
+            label: cloud.workspaceName ? `Cloud · ${cloud.workspaceName}` : "Cloud",
+          },
+        ]
+      : []),
     ...(onAddToMachine ? [{ value: ADD_MACHINE_VALUE, label: "Add to another machine" }] : []),
   ];
 
   // Match the xs control's height and padding: the composer strip has no min-height,
   // and its glass seam assumes that height even when this label is the only control.
-  if (envLocked || (onEnvironmentChange === undefined && onAddToMachine === undefined)) {
+  if (
+    envLocked ||
+    (onEnvironmentChange === undefined && onAddToMachine === undefined && cloud === null)
+  ) {
     const lockedRow = (
       <span
         className="inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 border border-transparent px-1.75 font-normal text-muted-foreground/70 text-sm sm:h-6 sm:text-xs"
@@ -89,14 +111,27 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   return (
     <Select
       modal={false}
-      value={autoEnvironmentLabel ? AUTO_VALUE : environmentValue(environmentId)}
+      value={
+        cloudSelected
+          ? "cloud"
+          : autoEnvironmentLabel
+            ? AUTO_VALUE
+            : environmentValue(environmentId)
+      }
       onValueChange={(value) => {
         if (value === ADD_MACHINE_VALUE) {
           onAddToMachine?.();
-        } else if (value === AUTO_VALUE) {
-          onAutoEnvironment?.();
-        } else if (value?.startsWith("env:")) {
-          onEnvironmentChange?.(value.slice(4) as EnvironmentId);
+        } else if (value === CONNECT_CLOUD_SELECT_VALUE) {
+          if (cloud?.connectUrl) openTrevizePage(cloud.connectUrl);
+        } else if (value === "cloud") {
+          onCloudSelectedChange?.(true);
+        } else {
+          if (cloudSelected) onCloudSelectedChange?.(false);
+          if (value === AUTO_VALUE) {
+            onAutoEnvironment?.();
+          } else if (value?.startsWith("env:") && value.slice(4) !== environmentId) {
+            onEnvironmentChange?.(value.slice(4) as EnvironmentId);
+          }
         }
       }}
       items={environmentItems}
@@ -113,7 +148,9 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             />
           }
         >
-          {autoEnvironmentLabel ? (
+          {cloudSelected ? (
+            <CloudIcon className="size-3 shrink-0" aria-hidden="true" />
+          ) : autoEnvironmentLabel ? (
             <ScaleIcon className="size-3 shrink-0" aria-hidden="true" />
           ) : (
             <EnvironmentMachineIcon
@@ -126,7 +163,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           </ComposerContextLabel>
         </TooltipTrigger>
         <TooltipPopup>
-          {autoEnvironmentLabel ?? activeEnvironment?.label ?? "Run on"}
+          {cloudSelected ? "Cloud" : (autoEnvironmentLabel ?? activeEnvironment?.label ?? "Run on")}
           {shortcutLabel ? ` · ${shortcutLabel}` : null}
         </TooltipPopup>
       </Tooltip>
@@ -158,6 +195,11 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
               </span>
             </SelectItem>
           ))}
+          {cloud ? (
+            <SelectItem value={cloudSelectValue(cloud)}>
+              <CloudItemContent placement={cloud} />
+            </SelectItem>
+          ) : null}
           {onAddToMachine ? (
             <SelectItem value={ADD_MACHINE_VALUE}>
               <span className={ADD_TO_MACHINE_LABEL_CLASS}>

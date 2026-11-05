@@ -15,6 +15,7 @@ import {
 import { useProjects } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useClientSettings } from "./useSettings";
+import { useSpaceEnvironmentIds } from "../trevize/Spaces";
 
 export function useLogicalProjectEnvironments(
   activeProject: EnvironmentProject | null,
@@ -24,6 +25,9 @@ export function useLogicalProjectEnvironments(
   const allProjects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  // A space's orchestrator and agents run in machines of their own; they are not
+  // places to run a thread, unless this thread already runs there.
+  const spaceEnvironmentIds = useSpaceEnvironmentIds();
 
   if (!activeProject) return [];
   const environmentById = new Map(
@@ -31,6 +35,8 @@ export function useLogicalProjectEnvironments(
   );
   const envs: EnvironmentOption[] = [];
   const pushEnvironment = (environmentId: EnvironmentId, projectId: ProjectId | null) => {
+    if (environmentId !== activeProject.environmentId && spaceEnvironmentIds.has(environmentId))
+      return;
     const environment = environmentById.get(environmentId) ?? null;
     envs.push({
       environmentId,
