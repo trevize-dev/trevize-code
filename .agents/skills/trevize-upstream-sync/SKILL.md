@@ -84,6 +84,10 @@ Pattern by pattern, the conflicts we have seen:
   `chat/RightPanelSurfaceContent.tsx`; `SavedBackendListRow` to
   `settings/SavedEnvironmentRows.tsx`. Tests upstream deleted (it prunes low-signal tests
   in bulk) stay deleted, even when we had rebranded them.
+- **`git checkout --theirs <file>` takes the whole file, not just the conflicting hunks.**
+  Only use it where that is the intent (`routeTree.gen.ts`). To take upstream's side of one
+  hunk, edit the markers; `git checkout -m <file>` recreates them if you went too far. In
+  v0.1.7 this silently dropped our desktop branding, which the identity tests caught.
 - **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
   ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 
@@ -165,3 +169,8 @@ if a pattern changed. Prune entries that no longer apply.
   go over plain HTTP, so route tests need HTTPS sample addresses. New lint rules and Effect
   diagnostics turned CI red across ten untouched Trevize files; fixed in the same PR. A dated
   usage test needed upstream's clock-pinning fix cherry-picked.
+- **v0.1.7 (2026-11-05).** 659 upstream commits, 5 conflicts: upstream dropped `linuxWmClass`
+  (take theirs, hunk only), split `UserMessageRow` (our agent-update check moved into
+  `UserMessageContent`), new `CommandPalette` imports, and the route tree. No breakage outside
+  the conflicts. `DesktopLinuxUrlHandler` theme-icon tests also fail on macOS (case-only
+  filename pair), same as unmodified upstream.
