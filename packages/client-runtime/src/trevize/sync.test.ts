@@ -217,8 +217,12 @@ const makeHarness = Effect.fn(function* (input: {
   readonly managedOrigins: ReadonlyArray<string>;
   readonly connection?: SupervisorConnectionState;
   readonly threads?: ReadonlyArray<unknown>;
-  /** Spaces of `ws_1`; absent answers 404 like a workspace without spaces. */
+  /** Spaces of every workspace; absent answers 404 like a workspace without spaces. */
   readonly spaces?: ReadonlyArray<unknown>;
+  /** Workspace ids; defaults to `ws_1`. */
+  readonly workspaces?: ReadonlyArray<string>;
+  /** `owner/repo` names connected to each workspace; defaults to `acme/web` everywhere. */
+  readonly repositories?: Readonly<Record<string, ReadonlyArray<string>>>;
 }) {
   const requests: Array<string> = [];
   const createdSpaces: Array<unknown> = [];
@@ -275,7 +279,23 @@ const makeHarness = Effect.fn(function* (input: {
     requests.push(`${init.method ?? "GET"} ${url.pathname}${url.search}`);
     if (url.pathname === "/api/v1/workspaces") {
       return Promise.resolve(
-        Response.json({ items: [{ id: "ws_1", name: "Acme", slug: "acme" }] }),
+        Response.json({
+          items: (input.workspaces ?? ["ws_1"]).map((id) => ({ id, name: id, slug: id })),
+        }),
+      );
+    }
+    const repositories = /^\/api\/v1\/workspaces\/([^/]+)\/repositories$/.exec(url.pathname);
+    if (repositories?.[1] !== undefined) {
+      const names = input.repositories ? (input.repositories[repositories[1]] ?? []) : ["acme/web"];
+      return Promise.resolve(
+        Response.json({
+          items: names.map((fullName, index) => ({
+            id: index,
+            name: fullName.split("/")[1],
+            fullName,
+            private: true,
+          })),
+        }),
       );
     }
     if (url.pathname === "/api/v1/environments" && init.method === "POST") {
@@ -569,6 +589,40 @@ describe("TrevizeCloudSync", () => {
     }),
   );
 
+  it.effect("launches a cloud session in the workspace that has the repository", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [],
+        threads: [],
+        workspaces: ["ws_1", "ws_2"],
+        repositories: { ws_1: ["acme/api"], ws_2: ["Acme/Web"] },
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaceWorkspaceIds.length === 2);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        yield* sync.launchSession({ repository: "acme/web", prompt: "Hi" });
+        expect(harness.createdEnvironments).toEqual([
+          { workspaceId: "ws_2", repositoryIds: ["acme/web"], title: "Hi" },
+        ]);
+
+        const error = yield* sync
+          .launchSession({ repository: "acme/docs", prompt: "Hi" })
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({
+          _tag: "TrevizeRepositoryNotConnectedError",
+          repositoryIds: ["acme/docs"],
+          connectUrl: "https://trevize.example.test/ws_1/settings/integrations/github",
+        });
+        expect(error.message).toContain("not connected to any of your Trevize workspaces");
+        expect(harness.createdEnvironments).toHaveLength(1);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
   it.effect("refuses a cloud session without a workspace that has environments", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ saved: [], environments: [], managedOrigins: [] });
@@ -673,6 +727,35 @@ describe("TrevizeCloudSync", () => {
         expect(harness.requests.filter((request) => request.includes("/spaces/spc_new"))).toEqual(
           [],
         );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("creates a space in the workspace that has all its repositories", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [],
+        threads: [],
+        workspaces: ["ws_1", "ws_2"],
+        repositories: { ws_1: ["acme/web"], ws_2: ["acme/web", "acme/api"] },
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaceWorkspaceIds.length === 2);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        yield* sync.createSpace({ name: "Billing", repositoryIds: ["acme/web", "acme/api"] });
+        expect(harness.createdSpaces).toEqual([
+          { workspaceId: "ws_2", name: "Billing", repositoryIds: ["acme/web", "acme/api"] },
+        ]);
+
+        const error = yield* sync
+          .createSpace({ name: "Docs", repositoryIds: ["acme/api", "acme/docs"] })
+          .pipe(Effect.flip);
+        expect(error.message).toContain("has all of acme/api, acme/docs connected");
+        expect(harness.createdSpaces).toHaveLength(1);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

@@ -49,7 +49,12 @@ import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProj
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
-import { useCloudSessionRepository } from "../trevize/cloudSessions";
+import {
+  openTrevizePage,
+  useCloudSessionPlacement,
+  type CloudPlacement,
+} from "../trevize/cloudSessions";
+import { CONNECT_CLOUD_SELECT_VALUE, CloudItemContent, cloudSelectValue } from "./CloudItemContent";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
@@ -164,7 +169,7 @@ interface RunContextSelectorProps {
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
   /** Offers "Cloud": this is a draft of a project Trevize Cloud can run. */
-  cloudAvailable: boolean;
+  cloud: CloudPlacement | null;
   previousWorktreeLabel: string | null;
   previousWorktreeBranch: string | null;
   onUsePreviousWorktree: () => void;
@@ -188,7 +193,7 @@ const RunContextSelector = memo(function RunContextSelector({
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
-  cloudAvailable,
+  cloud,
   previousWorktreeLabel,
   previousWorktreeBranch,
   onUsePreviousWorktree,
@@ -212,7 +217,9 @@ const RunContextSelector = memo(function RunContextSelector({
       ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
       : effectiveEnvMode === "local"
         ? resolveCurrentWorkspaceLabel(activeWorktreePath)
-        : resolveEnvModeLabel(effectiveEnvMode);
+        : effectiveEnvMode === "cloud" && cloud?.workspaceName
+          ? `Cloud · ${cloud.workspaceName}`
+          : resolveEnvModeLabel(effectiveEnvMode);
   const isPanel = displayMode === "panel";
   const isLocked = envLocked || (envModeLocked && (!isPanel || !showEnvironmentPicker));
   const workspacePath =
@@ -415,6 +422,10 @@ const RunContextSelector = memo(function RunContextSelector({
                 onUsePreviousWorktree();
                 return;
               }
+              if (value === CONNECT_CLOUD_SELECT_VALUE) {
+                if (cloud?.connectUrl) openTrevizePage(cloud.connectUrl);
+                return;
+              }
               onEnvModeChange(value as EnvMode);
             }}
           >
@@ -434,12 +445,9 @@ const RunContextSelector = memo(function RunContextSelector({
                 <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
               </span>
             </MenuRadioItem>
-            {cloudAvailable ? (
-              <MenuRadioItem disabled={envModeLocked} value="cloud" closeOnClick>
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <CloudIcon className="size-3" />
-                  <span className="min-w-0 truncate">{resolveEnvModeLabel("cloud")}</span>
-                </span>
+            {cloud ? (
+              <MenuRadioItem disabled={envModeLocked} value={cloudSelectValue(cloud)} closeOnClick>
+                <CloudItemContent placement={cloud} />
               </MenuRadioItem>
             ) : null}
             {previousWorktreeLabel ? (
@@ -665,8 +673,8 @@ export const BranchToolbar = memo(function BranchToolbar({
     ? resolvePreviousWorktreeLabel(previousWorktreeSeed)
     : null;
   // Like "Previous worktree", only a draft can still choose to start in the cloud.
-  const cloudRepository = useCloudSessionRepository(activeProject?.repositoryIdentity);
-  const cloudAvailable = canUsePreviousWorktree && cloudRepository !== null;
+  const cloudPlacement = useCloudSessionPlacement(activeProject?.repositoryIdentity);
+  const cloud = canUsePreviousWorktree ? cloudPlacement : null;
   const onUsePreviousWorktree = () => {
     if (!previousWorktreeSeed) return;
     setDraftThreadContext(draftId ?? threadRef, {
@@ -734,7 +742,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
             onEnvModeChange={onEnvModeChange}
-            cloudAvailable={cloudAvailable}
+            cloud={cloud}
             previousWorktreeLabel={previousWorktreeLabel}
             previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
             onUsePreviousWorktree={onUsePreviousWorktree}
@@ -785,7 +793,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
             onEnvModeChange={onEnvModeChange}
-            cloudAvailable={cloudAvailable}
+            cloud={cloud}
             previousWorktreeLabel={previousWorktreeLabel}
             previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
             onUsePreviousWorktree={onUsePreviousWorktree}
@@ -829,7 +837,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               effectiveEnvMode={effectiveEnvMode}
               activeWorktreePath={activeWorktreePath}
               onEnvModeChange={onEnvModeChange}
-              cloudAvailable={cloudAvailable}
+              cloud={cloud}
               previousWorktreeLabel={previousWorktreeLabel}
               previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
               onUsePreviousWorktree={onUsePreviousWorktree}

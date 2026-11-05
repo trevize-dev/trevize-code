@@ -186,6 +186,22 @@ export class TrevizeApiError extends Schema.TaggedError<TrevizeApiError>()("Trev
   status: Schema.optional(Schema.Number),
 }) {}
 
+/** No Trevize workspace with environments has all of `repositoryIds` connected. */
+export class TrevizeRepositoryNotConnectedError extends Schema.TaggedError<TrevizeRepositoryNotConnectedError>()(
+  "TrevizeRepositoryNotConnectedError",
+  {
+    repositoryIds: Schema.Array(Schema.String),
+    /** Where to connect them: the default workspace's GitHub settings on Trevize. */
+    connectUrl: Schema.NullOr(Schema.String),
+  },
+) {
+  override get message(): string {
+    return this.repositoryIds.length === 1
+      ? `Repository ${this.repositoryIds[0]} is not connected to any of your Trevize workspaces.`
+      : `None of your Trevize workspaces has all of ${this.repositoryIds.join(", ")} connected.`;
+  }
+}
+
 export function normalizeTrevizeBaseUrl(value: string): string {
   const trimmed = value.trim() || DEFAULT_TREVIZE_API_URL;
   const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
