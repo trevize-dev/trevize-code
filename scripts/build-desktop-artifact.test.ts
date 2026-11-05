@@ -37,6 +37,7 @@ import {
   MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
   preflightWindowsDesktopBuild,
+  isMacPasskeySigningEnabled,
   renderMacPasskeyEntitlements,
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
@@ -1345,6 +1346,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }),
     ),
   );
+
+  it("enables macOS passkey signing unless explicitly opted out", () => {
+    assert.isTrue(isMacPasskeySigningEnabled({}));
+    assert.isTrue(isMacPasskeySigningEnabled({ T3CODE_MACOS_PASSKEY_SIGNING: "true" }));
+    assert.isFalse(isMacPasskeySigningEnabled({ T3CODE_MACOS_PASSKEY_SIGNING: "false" }));
+    assert.isFalse(isMacPasskeySigningEnabled({ T3CODE_MACOS_PASSKEY_SIGNING: " FALSE " }));
+  });
 
   it.effect("rejects a macOS app without app.asar", () =>
     Effect.scoped(

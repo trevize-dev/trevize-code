@@ -1243,6 +1243,13 @@ function normalizePasskeyRpDomain(value: string): string {
   return parsed.hostname;
 }
 
+/** Signed builds without a passkey provisioning profile opt out explicitly; passkeys are then unavailable. */
+export function isMacPasskeySigningEnabled(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return env.T3CODE_MACOS_PASSKEY_SIGNING?.trim().toLowerCase() !== "false";
+}
+
 export function resolveMacPasskeySigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): MacPasskeySigningConfiguration {
@@ -3796,10 +3803,11 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  const repoEnv = loadRepoEnv({ repoRoot });
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" && options.signed && isMacPasskeySigningEnabled(repoEnv)
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacPasskeySigningConfiguration(repoEnv),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
