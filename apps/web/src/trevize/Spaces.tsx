@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { TrevizeMyTasks, TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
+import {
+  TrevizeMyTasks,
+  TrevizeSpaces,
+  TrevizeSync,
+  type TrevizeApi,
+} from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
@@ -55,7 +60,7 @@ export function useSpaceEnvironmentIds(): ReadonlySet<EnvironmentId> {
 /** Spaces from the Trevize Cloud sync loop. */
 export function useSpaces(): SpacesState {
   const sync = useAtomValue(Trevize.syncStateValueAtom);
-  const available = sync.signedIn && sync.spaceWorkspaceIds.length > 0;
+  const available = TrevizeSync.hasCloudEnvironments(sync);
   const activity = new Map(
     sync.spaces.map((space) => [
       space.id,

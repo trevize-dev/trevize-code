@@ -137,7 +137,6 @@ import {
   useAnyEnvironmentHiding,
   useHiddenThreadKeys,
   useEnvironmentThreadRefs,
-  useProject,
   useProjects,
   useServerConfigs,
   useVisibleThreadShells,
@@ -539,7 +538,13 @@ function OpenCommandPaletteDialog(props: {
     defaultProjectRef,
     handleNewThread,
   });
-  const contextualProject = useProject(contextualProjectRef);
+  const contextualProject = contextualProjectRef
+    ? (projects.find(
+        (project) =>
+          project.environmentId === contextualProjectRef.environmentId &&
+          project.id === contextualProjectRef.projectId,
+      ) ?? null)
+    : null;
   const contextualCloudRepository = useCloudSessionRepository(
     contextualProject?.repositoryIdentity,
   );
@@ -1270,7 +1275,7 @@ function OpenCommandPaletteDialog(props: {
       });
     }
 
-    if (contextualProjectRef !== null && contextualProject && contextualCloudRepository !== null) {
+    if (contextualProject && contextualCloudRepository !== null) {
       actionItems.push({
         kind: "action",
         value: "action:new-cloud-agent",
@@ -1283,7 +1288,10 @@ function OpenCommandPaletteDialog(props: {
         icon: <CloudIcon className={ITEM_ICON_CLASS} />,
         run: async () => {
           // A cloud draft runs in a fresh sandbox, never in a local worktree.
-          await handleNewThread(contextualProjectRef, { envMode: "cloud", worktreePath: null });
+          await handleNewThread(
+            scopeProjectRef(contextualProject.environmentId, contextualProject.id),
+            { envMode: "cloud", worktreePath: null },
+          );
         },
       });
     }
