@@ -32,6 +32,16 @@ describe("resolveDraftEnvModeAfterBranchChange", () => {
       }),
     ).toBe("worktree");
   });
+
+  it("keeps a cloud draft in the cloud when it picks the branch to work on", () => {
+    expect(
+      resolveDraftEnvModeAfterBranchChange({
+        nextWorktreePath: null,
+        currentWorktreePath: null,
+        effectiveEnvMode: "cloud",
+      }),
+    ).toBe("cloud");
+  });
 });
 
 describe("resolveBranchToolbarPrBranch", () => {

@@ -52,6 +52,7 @@ import {
   resolveBranchToolbarValue,
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
+  type EnvMode,
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
 } from "./BranchToolbar.logic";
@@ -81,7 +82,7 @@ interface BranchToolbarBranchSelectorProps {
   threadId: ThreadId;
   draftId?: DraftId;
   envLocked: boolean;
-  effectiveEnvModeOverride?: "local" | "worktree";
+  effectiveEnvModeOverride?: EnvMode;
   activeThreadBranchOverride?: string | null;
   onActiveThreadBranchOverrideChange?: (refName: string | null) => void;
   startFromOrigin: boolean;
@@ -242,10 +243,17 @@ export function BranchToolbarBranchSelector({
   const branchByName = new Map(refs.map((refName) => [refName.name, refName] as const));
   const normalizedBranchQuery = trimmedBranchQuery.toLowerCase();
   const prReference = parsePullRequestReference(trimmedBranchQuery);
+  // A cloud draft picks the branch its sandbox checks out, like a new worktree's base:
+  // nothing is checked out on this machine.
   const isSelectingWorktreeBase =
-    effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
+    (effectiveEnvMode === "worktree" || effectiveEnvMode === "cloud") &&
+    !envLocked &&
+    !activeWorktreePath;
   const checkoutPullRequestItemValue =
-    canChangeThreadBranch && prReference && onCheckoutPullRequestRequest
+    canChangeThreadBranch &&
+    prReference &&
+    onCheckoutPullRequestRequest &&
+    effectiveEnvMode !== "cloud"
       ? `__checkout_pull_request__:${prReference}`
       : null;
   const canCreateBranch =
@@ -387,7 +395,13 @@ export function BranchToolbarBranchSelector({
     if (!canUpdateThreadBranch || !branchCwd || !activeProjectCwd || isBranchActionPending) return;
 
     if (isSelectingWorktreeBase) {
-      setThreadBranch(refName.name, null);
+      // The sandbox clones from GitHub, so a cloud draft keeps the branch's plain name.
+      setThreadBranch(
+        effectiveEnvMode === "cloud" && refName.isRemote
+          ? deriveLocalBranchNameFromRemoteRef(refName.name)
+          : refName.name,
+        null,
+      );
       setIsBranchMenuOpen(false);
       onComposerFocusRequest?.();
       return;
@@ -492,7 +506,7 @@ export function BranchToolbarBranchSelector({
   useEffect(() => {
     if (
       threadStarted ||
-      effectiveEnvMode !== "worktree" ||
+      (effectiveEnvMode !== "worktree" && effectiveEnvMode !== "cloud") ||
       activeWorktreePath ||
       activeThreadBranch ||
       !worktreeBaseBranchCandidate
@@ -672,7 +686,7 @@ export function BranchToolbarBranchSelector({
             : "branch"
       }
       originControl={
-        isSelectingWorktreeBase
+        isSelectingWorktreeBase && effectiveEnvMode !== "cloud"
           ? { checked: startFromOrigin, onCheckedChange: onStartFromOriginChange }
           : undefined
       }

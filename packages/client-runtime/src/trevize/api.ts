@@ -481,6 +481,7 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
 
 /** Only the runtime thread id matters to the client: it opens the thread with it. */
 const DispatchedThread = Schema.Struct({ threadId: ThreadId });
+const SentThreadMessage = Schema.Struct({ threadId: Schema.String });
 
 export interface TrevizeThreadDispatchInput {
   /** `owner/repo` or a Trevize repository id; must be one of the environment's. */
@@ -491,6 +492,10 @@ export interface TrevizeThreadDispatchInput {
   readonly model?: string;
   /** Makes retries idempotent: a repeat returns the thread the first call started. */
   readonly dispatchKey?: string;
+  /** The branch to work on; the repository's default branch otherwise. */
+  readonly branch?: string;
+  /** Run in its own git worktree (Trevize's default) or in the checkout itself. */
+  readonly worktree?: boolean;
 }
 
 /** How long a just-connected environment may keep answering 409 before launching gives up. */
@@ -516,11 +521,20 @@ export const dispatchThread = Effect.fn("clientRuntime.trevize.dispatchThread")(
       ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.dispatchKey ? { dispatchKey: input.dispatchKey } : {}),
+      ...(input.branch ? { branch: input.branch } : {}),
+      ...(input.worktree !== undefined ? { worktree: input.worktree } : {}),
     }),
   );
+  return yield* retryWhileStarting(execute(config, request, DispatchedThread));
+});
+
+/** Retries a call Trevize answers with 409 while its environment is not running yet. */
+const retryWhileStarting = Effect.fn("clientRuntime.trevize.retryWhileStarting")(function* <A, R>(
+  call: Effect.Effect<A, TrevizeApiError, R>,
+) {
   const startedAt = yield* Clock.currentTimeMillis;
   while (true) {
-    const result = yield* execute(config, request, DispatchedThread).pipe(
+    const result = yield* call.pipe(
       Effect.asSome,
       Effect.catchIf(
         (error) => error.status === 409,
@@ -537,6 +551,22 @@ export const dispatchThread = Effect.fn("clientRuntime.trevize.dispatchThread")(
     }
     yield* Effect.sleep(Duration.millis(DISPATCH_RETRY_MS));
   }
+});
+
+/**
+ * Sends a follow-up prompt to a thread (Trevize id or runtime thread id), like
+ * the composer: it starts a run when the thread is idle and otherwise steers or
+ * queues behind the active run.
+ */
+export const sendThreadMessage = Effect.fn("clientRuntime.trevize.sendThreadMessage")(function* (
+  config: TrevizeApiConfig,
+  threadId: string,
+  prompt: string,
+) {
+  const request = HttpClientRequest.post(
+    apiUrl(config, `/threads/${encodeURIComponent(threadId)}/messages`),
+  ).pipe(HttpClientRequest.bodyJsonUnsafe({ prompt }));
+  yield* retryWhileStarting(execute(config, request, SentThreadMessage));
 });
 
 /**

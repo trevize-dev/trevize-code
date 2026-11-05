@@ -267,6 +267,8 @@ import {
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { CloudLaunchCard } from "./chat/CloudLaunchCard";
+import { useCloudLaunch } from "../trevize/cloudLaunches";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
@@ -1263,7 +1265,11 @@ export default function ChatView(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
-  const envLocked = Boolean(activeThread && (activeMessageCount > 0 || activeRuntime !== null));
+  // A cloud session starting from this draft: the draft shows it until the thread opens.
+  const cloudLaunch = useCloudLaunch(routeThreadKey);
+  const envLocked = Boolean(
+    cloudLaunch !== null || (activeThread && (activeMessageCount > 0 || activeRuntime !== null)),
+  );
   // onEnvironmentChange only retargets an unsent draft. envLocked alone does not
   // rule out a started thread: one whose machine is offline never loads its
   // messages, so it would otherwise be offered a machine picker that does nothing.
@@ -1556,7 +1562,19 @@ export default function ChatView(props: ChatViewProps) {
     ...timelineEntriesInput,
     visibleTurnItems: serverTimelineRows,
   });
-  const draftTimelineEntries = optimisticUserMessages.map(
+  const draftMessages: ReadonlyArray<ChatMessage> =
+    cloudLaunch === null
+      ? optimisticUserMessages
+      : cloudLaunch.messages.map((message) => ({
+          id: message.id,
+          role: "user",
+          text: message.text,
+          runId: null,
+          streaming: false,
+          createdAt: message.createdAt,
+          updatedAt: message.createdAt,
+        }));
+  const draftTimelineEntries = draftMessages.map(
     (message) =>
       ({
         id: message.id,
@@ -3128,11 +3146,13 @@ export default function ChatView(props: ChatViewProps) {
   // its lifecycle status, guest messages awaiting you, then your queued messages.
   const timelineFooter =
     pendingHandoff === null &&
+    cloudLaunch === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
     pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
+        {cloudLaunch === null || isServerThread ? null : <CloudLaunchCard launch={cloudLaunch} />}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow

@@ -180,6 +180,7 @@ interface Harness {
   readonly createdEnvironments: Array<unknown>;
   /** Bodies of `POST /environments/{id}/threads`. */
   readonly dispatchedThreads: Array<unknown>;
+  readonly sentMessages: Array<{ threadId: string; prompt: string }>;
   readonly pairings: Array<ConnectionOnboarding.PairingConnectionInput>;
   readonly removed: Array<EnvironmentId>;
   readonly retried: Array<EnvironmentId>;
@@ -223,12 +224,15 @@ const makeHarness = Effect.fn(function* (input: {
   readonly workspaces?: ReadonlyArray<string>;
   /** `owner/repo` names connected to each workspace; defaults to `acme/web` everywhere. */
   readonly repositories?: Readonly<Record<string, ReadonlyArray<string>>>;
+  /** A follow-up prompt Trevize fails to send. */
+  readonly failMessage?: string;
 }) {
   const requests: Array<string> = [];
   const createdSpaces: Array<unknown> = [];
   const updatedSpaces: Array<unknown> = [];
   const createdEnvironments: Array<unknown> = [];
   const dispatchedThreads: Array<unknown> = [];
+  const sentMessages: Array<{ threadId: string; prompt: string }> = [];
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
   const removed: Array<EnvironmentId> = [];
   const retried: Array<EnvironmentId> = [];
@@ -317,6 +321,15 @@ const makeHarness = Effect.fn(function* (input: {
         }),
       );
     }
+    const message = /^\/api\/v1\/threads\/([^/]+)\/messages$/.exec(url.pathname);
+    if (message?.[1] !== undefined) {
+      const { prompt } = JSON.parse(String(init.body));
+      if (prompt === input.failMessage) {
+        return Promise.resolve(Response.json({ message: "boom" }, { status: 500 }));
+      }
+      sentMessages.push({ threadId: message[1], prompt });
+      return Promise.resolve(Response.json({ threadId: message[1] }));
+    }
     if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
     }
@@ -399,6 +412,7 @@ const makeHarness = Effect.fn(function* (input: {
     updatedSpaces,
     createdEnvironments,
     dispatchedThreads,
+    sentMessages,
     pairings,
     removed,
     retried,
@@ -565,6 +579,7 @@ describe("TrevizeCloudSync", () => {
           prompt: "Fix the flaky checkout test\nIt fails on CI only.",
           providerInstanceId: "codex",
           model: "gpt-5.5",
+          branch: "fix/checkout",
         });
         expect(harness.createdEnvironments).toEqual([
           {
@@ -582,9 +597,81 @@ describe("TrevizeCloudSync", () => {
             providerInstanceId: "codex",
             model: "gpt-5.5",
             dispatchKey: "cloud-session:env_new",
+            branch: "fix/checkout",
+            // The session has the sandbox to itself, so no worktree.
+            worktree: false,
           },
         ]);
-        expect(route).toEqual({ environmentId: "t3-paired-1", threadId: "t3-thread-new" });
+        expect(route).toEqual({
+          environmentId: "t3-paired-1",
+          threadId: "t3-thread-new",
+          unsent: [],
+        });
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("reports launch phases and sends messages queued while it started", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [],
+        threads: [],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaceWorkspaceIds.length > 0);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const phases: Array<TrevizeSync.CloudLaunchPhase> = [];
+        // Two messages wait when the agent starts; a third arrives while they are sent.
+        const queue = [["Also update the docs", "And the changelog"], ["Then open a PR"]];
+        const launched = yield* sync.launchSession({
+          repository: "acme/web",
+          prompt: "Fix the flaky checkout test",
+          onPhase: (phase) => phases.push(phase),
+          takeQueued: () => {
+            // Nothing is taken before the thread exists.
+            expect(harness.dispatchedThreads).toHaveLength(1);
+            return queue.shift() ?? [];
+          },
+        });
+        expect(phases).toEqual(["creating", "starting", "starting-agent"]);
+        expect(harness.sentMessages).toEqual([
+          { threadId: "t3-thread-new", prompt: "Also update the docs" },
+          { threadId: "t3-thread-new", prompt: "And the changelog" },
+          { threadId: "t3-thread-new", prompt: "Then open a PR" },
+        ]);
+        expect(launched.unsent).toEqual([]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("keeps queued messages after a failed send for the caller", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [],
+        threads: [],
+        failMessage: "Second",
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaceWorkspaceIds.length > 0);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const queue = [["First", "Second", "Third"]];
+        const launched = yield* sync.launchSession({
+          repository: "acme/web",
+          prompt: "Start",
+          takeQueued: () => queue.shift() ?? [],
+        });
+        // The session started; only what follows the failed send comes back.
+        expect(launched.threadId).toBe("t3-thread-new");
+        expect(harness.sentMessages.map((message) => message.prompt)).toEqual(["First"]);
+        expect(launched.unsent).toEqual(["Second", "Third"]);
       }).pipe(Effect.provide(harness.layer));
     }),
   );
