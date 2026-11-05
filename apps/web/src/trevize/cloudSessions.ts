@@ -20,6 +20,12 @@ import { buildThreadRouteParams } from "~/threadRoutes";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import {
+  beginCloudLaunch,
+  endCloudLaunch,
+  setCloudLaunchPhase,
+  takeCloudLaunchQueue,
+} from "./cloudLaunches";
+import {
   TREVIZE_SETTINGS_STORAGE_KEY,
   TrevizeClientSettings,
   defaultTrevizeSettings,
@@ -121,37 +127,51 @@ export function openTrevizePage(url: string): void {
 }
 
 /**
- * Starts a cloud session behind a progress toast. Opens the new thread when
- * `stillWanted()` says the user is still on the draft that started it, and
- * otherwise leaves an "Open" action on the toast. Resolves to whether it launched.
+ * Starts a cloud session from the draft at `key`, which shows its progress and
+ * queues later sends (`cloudLaunches`). Opens the thread if `stillWanted()`,
+ * else offers it on a toast. Resolves to null once launched, or to the queued
+ * prompts the draft gets back when it fails.
  */
 export function useLaunchCloudSession() {
   const navigate = useNavigate();
   const run = useAtomCommand(launchSession, { reportFailure: false });
-  return async (input: TrevizeSync.LaunchSessionInput, stillWanted: () => boolean) => {
-    const toastId = toastManager.add(
-      stackedThreadToast({
-        type: "loading",
-        title: "Starting cloud session",
-        description: `Preparing a sandbox for ${input.repository}. A cold start can take a few minutes.`,
-        timeout: 0,
-        data: { hideCopyButton: true },
-      }),
-    );
-    const result = await run(input);
+  return async (
+    key: string,
+    input: TrevizeSync.LaunchSessionInput & { readonly displayPrompt: string },
+    stillWanted: () => boolean,
+  ): Promise<ReadonlyArray<string> | null> => {
+    const { displayPrompt, ...launchInput } = input;
+    beginCloudLaunch(key, {
+      repository: input.repository,
+      branch: input.branch ?? null,
+      prompt: displayPrompt,
+    });
+    const result = await run({
+      ...launchInput,
+      onPhase: (phase) => setCloudLaunchPhase(key, phase),
+      takeQueued: () => takeCloudLaunchQueue(key),
+    });
+    const launch = endCloudLaunch(key);
     if (result._tag === "Success") {
       const open = () =>
         navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(result.value) });
+      if (result.value.unsent.length > 0) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Some queued messages were not sent",
+            description: result.value.unsent.join("\n\n"),
+          }),
+        );
+      }
       if (stillWanted()) {
-        toastManager.close(toastId);
         await open();
       } else {
-        toastManager.update(
-          toastId,
+        const toastId = toastManager.add(
           stackedThreadToast({
             type: "success",
             title: "Cloud session started",
-            description: TrevizeSync.cloudSessionTitle(input.prompt),
+            description: TrevizeSync.cloudSessionTitle(displayPrompt),
             timeout: 20_000,
             actionProps: {
               children: "Open",
@@ -164,16 +184,13 @@ export function useLaunchCloudSession() {
           }),
         );
       }
-      return true;
+      return null;
     }
-    if (isAtomCommandInterrupted(result)) {
-      toastManager.close(toastId);
-      return false;
-    }
+    const queued = launch?.messages.slice(1).map((message) => message.text) ?? [];
+    if (isAtomCommandInterrupted(result)) return queued;
     const error = squashAtomCommandFailure(result);
     const connectUrl = isRepositoryNotConnected(error) ? error.connectUrl : null;
-    toastManager.update(
-      toastId,
+    const toastId = toastManager.add(
       stackedThreadToast({
         type: "error",
         title: "Could not start cloud session",
@@ -191,6 +208,6 @@ export function useLaunchCloudSession() {
           : {}),
       }),
     );
-    return false;
+    return queued;
   };
 }

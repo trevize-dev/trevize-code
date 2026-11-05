@@ -28,6 +28,7 @@ import {
   createEnvironment as createTrevizeEnvironment,
   createSpace as createTrevizeSpace,
   dispatchThread,
+  sendThreadMessage,
   updateSpace as updateTrevizeSpace,
   wakeWhenReady,
   listEnvironments,
@@ -201,6 +202,13 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   connectedRepositories: new Map(),
 };
 
+/**
+ * What a cloud session launch is doing, in order: creating its environment,
+ * waiting for the sandbox to boot and check out the repository, then starting
+ * the agent thread.
+ */
+export type CloudLaunchPhase = "creating" | "starting" | "starting-agent";
+
 /** A one-off cloud session: one fresh environment running one agent thread. */
 export interface LaunchSessionInput {
   /** `owner/repo`, cloned into the new environment. */
@@ -210,6 +218,22 @@ export interface LaunchSessionInput {
   /** A T3 provider instance id, e.g. `codex`. */
   readonly providerInstanceId?: string;
   readonly model?: string;
+  /** The branch to work on; the repository's default branch otherwise. */
+  readonly branch?: string;
+  /** Told each phase as the launch reaches it. */
+  readonly onPhase?: (phase: CloudLaunchPhase) => void;
+  /**
+   * Takes the messages sent while the session started. Called once the agent
+   * runs, and again after each batch is sent, until it returns none.
+   */
+  readonly takeQueued?: () => ReadonlyArray<string>;
+}
+
+/** A launched cloud session, plus queued messages that could not be sent to it. */
+export interface LaunchedSession {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly unsent: ReadonlyArray<string>;
 }
 
 /** A cloud session environment's title: the prompt's first line, shortened. */
@@ -272,10 +296,7 @@ export class TrevizeCloudSync extends Context.Service<
      */
     readonly launchSession: (
       input: LaunchSessionInput,
-    ) => Effect.Effect<
-      { readonly environmentId: EnvironmentId; readonly threadId: ThreadId },
-      TrevizeApiError | TrevizeRepositoryNotConnectedError
-    >;
+    ) => Effect.Effect<LaunchedSession, TrevizeApiError | TrevizeRepositoryNotConnectedError>;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
@@ -763,6 +784,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     input: LaunchSessionInput,
   ) {
     const { config, settings } = yield* requireConfig("start a cloud session");
+    input.onPhase?.("creating");
     const workspaceId = yield* workspaceForRepositories(config, settings.workspaceId, [
       input.repository,
     ]);
@@ -771,16 +793,41 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       repositoryIds: [input.repository],
       title: cloudSessionTitle(input.prompt),
     }).pipe(Effect.provideContext(context));
+    input.onPhase?.("starting");
     const environmentId = yield* connect(config, environment);
+    input.onPhase?.("starting-agent");
     const dispatched = yield* dispatchThread(config, environment.id, {
       repositoryId: input.repository,
       prompt: input.prompt,
       ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
       ...(input.model ? { model: input.model } : {}),
       dispatchKey: `cloud-session:${environment.id}`,
+      ...(input.branch ? { branch: input.branch } : {}),
+      // The sandbox is this session's alone, so the agent works in the checkout itself.
+      worktree: false,
     }).pipe(Effect.provideContext(context));
+    // The agent runs: hand it what the user sent meanwhile, in order. A failed
+    // send keeps the rest for the caller instead of failing a started session.
+    const unsent: Array<string> = [];
+    for (
+      let batch = input.takeQueued?.() ?? [];
+      batch.length > 0;
+      batch = input.takeQueued?.() ?? []
+    ) {
+      for (const prompt of batch) {
+        const sent =
+          unsent.length === 0 &&
+          (yield* sendThreadMessage(config, dispatched.threadId, prompt).pipe(
+            Effect.provideContext(context),
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ));
+        if (!sent) unsent.push(prompt);
+      }
+    }
     yield* syncNow;
-    return { environmentId, threadId: dispatched.threadId };
+    const launched: LaunchedSession = { environmentId, threadId: dispatched.threadId, unsent };
+    return launched;
   });
 
   // The one sync loop: runs at start, then on request or every interval.

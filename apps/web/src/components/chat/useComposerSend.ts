@@ -99,6 +99,7 @@ import {
 } from "./composerSend.logic";
 import { usePlanFollowUpSend } from "./useProposedPlanSend";
 import type { TrevizeSync } from "@t3tools/client-runtime/trevize";
+import { queueCloudLaunchMessage } from "../../trevize/cloudLaunches";
 import { useLaunchCloudSession } from "../../trevize/cloudSessions";
 import { useMultipleModelSend } from "./useMultipleModelSend";
 import { type ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
@@ -410,8 +411,9 @@ export function useComposerSend(input: ComposerSendInput) {
 
   /**
    * A cloud draft's send: Trevize starts a fresh sandbox and a thread there
-   * with this prompt, so nothing is sent to this environment. The draft is
-   * emptied while it starts and gets its prompt back if starting fails.
+   * with this prompt, so nothing is sent to this environment. While it starts,
+   * the draft shows its progress and later sends are queued for the new
+   * thread. A failed start hands the prompts back to the draft.
    */
   const sendToCloud = async (
     launch: TrevizeSync.LaunchSessionInput & { readonly draftPrompt: string },
@@ -419,20 +421,25 @@ export function useComposerSend(input: ComposerSendInput) {
     const { draftPrompt, ...input } = launch;
     const launchKey = routeThreadKey;
     const draftTarget = composerDraftTarget;
-    sendInFlightRef.current = true;
-    promptRef.current = "";
-    clearComposerDraftContent(draftTarget);
-    composerRef.current?.resetCursorState();
-    try {
-      const launched = await launchCloudSession(
-        input,
-        () => currentRouteThreadKeyRef.current === launchKey,
-      );
-      if (!launched && !useComposerDraftStore.getState().getComposerDraft(draftTarget)?.prompt) {
-        setComposerDraftPrompt(draftTarget, draftPrompt);
-      }
-    } finally {
-      sendInFlightRef.current = false;
+    const clearComposer = () => {
+      promptRef.current = "";
+      clearComposerDraftContent(draftTarget);
+      composerRef.current?.resetCursorState();
+    };
+    const queue = queueCloudLaunchMessage(launchKey, draftPrompt.trim());
+    if (queue === "opening") return;
+    clearComposer();
+    if (queue === "queued") return;
+    const queued = await launchCloudSession(
+      launchKey,
+      { ...input, displayPrompt: draftPrompt.trim() },
+      () => currentRouteThreadKeyRef.current === launchKey,
+    );
+    if (
+      queued !== null &&
+      !useComposerDraftStore.getState().getComposerDraft(draftTarget)?.prompt
+    ) {
+      setComposerDraftPrompt(draftTarget, [draftPrompt, ...queued].join("\n\n"));
     }
   };
 
@@ -900,6 +907,7 @@ export function useComposerSend(input: ComposerSendInput) {
         prompt,
         providerInstanceId: ctxSelectedProvider,
         model: ctxSelectedModel,
+        ...(activeThreadBranch ? { branch: activeThreadBranch } : {}),
         draftPrompt: promptForSend,
       });
       return;

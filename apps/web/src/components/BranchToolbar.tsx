@@ -761,7 +761,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             onAddToMachine={onAddToMachine}
           />
         ) : null}
-        {panelSection !== "workspace" && effectiveEnvMode !== "cloud" ? (
+        {panelSection !== "workspace" ? (
           <BranchToolbarBranchSelector
             displayMode="panel"
             className="w-full"
@@ -859,7 +859,7 @@ export const BranchToolbar = memo(function BranchToolbar({
         </div>
       ) : null}
 
-      {showGitControls && effectiveEnvMode !== "cloud" ? (
+      {showGitControls ? (
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}

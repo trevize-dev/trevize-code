@@ -186,6 +186,8 @@ export function resolveDraftEnvModeAfterBranchChange(input: {
   effectiveEnvMode: EnvMode;
 }): EnvMode {
   const { nextWorktreePath, currentWorktreePath, effectiveEnvMode } = input;
+  // A cloud draft only records which branch the sandbox checks out.
+  if (effectiveEnvMode === "cloud") return "cloud";
   if (nextWorktreePath) {
     return "worktree";
   }
@@ -202,7 +204,7 @@ export function resolveBranchToolbarValue(input: {
   currentGitBranch: string | null;
 }): string | null {
   const { envMode, activeWorktreePath, activeThreadBranch, currentGitBranch } = input;
-  if (envMode === "worktree" && !activeWorktreePath) {
+  if (envMode === "cloud" || (envMode === "worktree" && !activeWorktreePath)) {
     return activeThreadBranch ?? currentGitBranch;
   }
   return currentGitBranch ?? activeThreadBranch;
