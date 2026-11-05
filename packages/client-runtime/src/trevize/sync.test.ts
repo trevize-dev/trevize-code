@@ -176,6 +176,10 @@ interface Harness {
   readonly createdSpaces: Array<unknown>;
   /** Bodies of `PATCH /spaces/{id}`. */
   readonly updatedSpaces: Array<unknown>;
+  /** Bodies of `POST /environments`. */
+  readonly createdEnvironments: Array<unknown>;
+  /** Bodies of `POST /environments/{id}/threads`. */
+  readonly dispatchedThreads: Array<unknown>;
   readonly pairings: Array<ConnectionOnboarding.PairingConnectionInput>;
   readonly removed: Array<EnvironmentId>;
   readonly retried: Array<EnvironmentId>;
@@ -219,6 +223,8 @@ const makeHarness = Effect.fn(function* (input: {
   const requests: Array<string> = [];
   const createdSpaces: Array<unknown> = [];
   const updatedSpaces: Array<unknown> = [];
+  const createdEnvironments: Array<unknown> = [];
+  const dispatchedThreads: Array<unknown> = [];
   const pairings: Array<ConnectionOnboarding.PairingConnectionInput> = [];
   const removed: Array<EnvironmentId> = [];
   const retried: Array<EnvironmentId> = [];
@@ -272,8 +278,24 @@ const makeHarness = Effect.fn(function* (input: {
         Response.json({ items: [{ id: "ws_1", name: "Acme", slug: "acme" }] }),
       );
     }
+    if (url.pathname === "/api/v1/environments" && init.method === "POST") {
+      createdEnvironments.push(JSON.parse(String(init.body)));
+      return Promise.resolve(Response.json(trevizeEnvironment("env_new", "provisioning")));
+    }
     if (url.pathname === "/api/v1/environments") {
       return Promise.resolve(Response.json({ environments: input.environments }));
+    }
+    if (/^\/api\/v1\/environments\/[^/]+\/threads$/.test(url.pathname)) {
+      dispatchedThreads.push(JSON.parse(String(init.body)));
+      return Promise.resolve(
+        Response.json({
+          id: "thr_new",
+          threadId: "t3-thread-new",
+          projectId: "t3-project",
+          deepLinkUrl: `${origin("env_new")}/t3-thread-new`,
+          existing: false,
+        }),
+      );
     }
     if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
@@ -355,6 +377,8 @@ const makeHarness = Effect.fn(function* (input: {
     requests,
     createdSpaces,
     updatedSpaces,
+    createdEnvironments,
+    dispatchedThreads,
     pairings,
     removed,
     retried,
@@ -499,6 +523,64 @@ describe("TrevizeCloudSync", () => {
         // Opening wakes and pairs the unsaved environment, then routes by the T3 id.
         expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_a")]);
         expect(route).toEqual({ environmentId: "t3-paired-1", threadId: "t3-thread-1" });
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("launches a cloud session in a fresh environment and routes to its thread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [],
+        environments: [],
+        managedOrigins: [],
+        spaces: [],
+        threads: [],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.spaceWorkspaceIds.length > 0);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const route = yield* sync.launchSession({
+          repository: "acme/web",
+          prompt: "Fix the flaky checkout test\nIt fails on CI only.",
+          providerInstanceId: "codex",
+          model: "gpt-5.5",
+        });
+        expect(harness.createdEnvironments).toEqual([
+          {
+            workspaceId: "ws_1",
+            repositoryIds: ["acme/web"],
+            title: "Fix the flaky checkout test",
+          },
+        ]);
+        // The new environment is paired before the thread starts, so the route opens.
+        expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_new")]);
+        expect(harness.dispatchedThreads).toEqual([
+          {
+            repositoryId: "acme/web",
+            prompt: "Fix the flaky checkout test\nIt fails on CI only.",
+            providerInstanceId: "codex",
+            model: "gpt-5.5",
+            dispatchKey: "cloud-session:env_new",
+          },
+        ]);
+        expect(route).toEqual({ environmentId: "t3-paired-1", threadId: "t3-thread-new" });
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("refuses a cloud session without a workspace that has environments", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ saved: [], environments: [], managedOrigins: [] });
+
+      yield* Effect.gen(function* () {
+        yield* awaitState((state) => state.lastSyncedAt !== null);
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+        const error = yield* sync
+          .launchSession({ repository: "acme/web", prompt: "Hi" })
+          .pipe(Effect.flip);
+        expect(error.message).toContain("cloud environments enabled");
+        expect(harness.createdEnvironments).toEqual([]);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

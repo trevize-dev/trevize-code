@@ -285,6 +285,7 @@ import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { useWakeSleepingTrevizeEnvironment } from "../trevize/TrevizeWake";
+import { useCloudSessionRepository } from "../trevize/cloudSessions";
 import { useSideChat } from "./chat/useSideChat";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
@@ -2239,9 +2240,15 @@ export default function ChatView(props: ChatViewProps) {
   const setPendingServerThreadBranch = (branch: string | null) => {
     if (activeThread) setPendingServerThreadBranchEntry({ threadId: activeThread.id, branch });
   };
-  const envMode: DraftThreadEnvMode = canOverrideServerThreadEnvMode
+  const requestedEnvMode: DraftThreadEnvMode = canOverrideServerThreadEnvMode
     ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
     : derivedEnvMode;
+  const cloudRepository = useCloudSessionRepository(activeProject?.repositoryIdentity);
+  // Only a draft can start in the cloud, and only while Trevize Cloud can run its project.
+  const envMode: DraftThreadEnvMode =
+    requestedEnvMode === "cloud" && (!isLocalDraftThread || cloudRepository === null)
+      ? "local"
+      : requestedEnvMode;
   const activeThreadBranch =
     canOverrideServerThreadEnvMode && pendingServerThreadBranchEntryForThread !== null
       ? pendingServerThreadBranchEntryForThread.branch
@@ -2252,10 +2259,9 @@ export default function ChatView(props: ChatViewProps) {
       ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
         activeProjectSettings.settings.newWorktreesStartFromOrigin)
       : false;
-  const sendEnvMode = resolveSendEnvMode({
-    requestedEnvMode: envMode,
-    isGitRepo,
-  });
+  // A cloud draft already has a GitHub repository; the shared helper only knows server modes.
+  const sendEnvMode: DraftThreadEnvMode =
+    envMode === "cloud" ? "cloud" : resolveSendEnvMode({ requestedEnvMode: envMode, isGitRepo });
   const localCheckoutBranchMismatch = isServerThread
     ? resolveLocalCheckoutBranchMismatch({
         effectiveEnvMode: envMode,

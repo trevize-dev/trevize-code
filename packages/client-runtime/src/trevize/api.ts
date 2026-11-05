@@ -462,6 +462,77 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
   }
 });
 
+const DispatchedThread = Schema.Struct({
+  /** The Trevize thread id. */
+  id: Schema.String,
+  /** The thread id on the environment's own T3 server. */
+  threadId: Schema.String,
+  projectId: Schema.String,
+  deepLinkUrl: Schema.String,
+  existing: Schema.Boolean,
+});
+export type TrevizeDispatchedThread = typeof DispatchedThread.Type;
+
+export interface TrevizeThreadDispatchInput {
+  /** `owner/repo` or a Trevize repository id; must be one of the environment's. */
+  readonly repositoryId: string;
+  readonly prompt: string;
+  readonly title?: string;
+  /** A T3 provider instance id, e.g. `codex`; the environment's default otherwise. */
+  readonly providerInstanceId?: string;
+  readonly model?: string;
+  /** Makes retries idempotent: a repeat returns the thread the first call started. */
+  readonly dispatchKey?: string;
+}
+
+/** How long a just-connected environment may keep answering 409 before launching gives up. */
+const DISPATCH_MAX_WAIT_MS = 60_000;
+const DISPATCH_RETRY_MS = 2_000;
+
+/**
+ * Starts a thread with a first prompt in an environment. Trevize answers 409
+ * while the environment is not running yet, so that is retried briefly; pass
+ * a `dispatchKey` so a retry never starts a second thread.
+ */
+export const dispatchThread = Effect.fn("clientRuntime.trevize.dispatchThread")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+  input: TrevizeThreadDispatchInput,
+) {
+  const title = input.title?.trim();
+  const request = HttpClientRequest.post(
+    apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/threads`),
+  ).pipe(
+    HttpClientRequest.bodyJsonUnsafe({
+      repositoryId: input.repositoryId,
+      prompt: input.prompt,
+      ...(title ? { title } : {}),
+      ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.dispatchKey ? { dispatchKey: input.dispatchKey } : {}),
+    }),
+  );
+  const startedAt = yield* Clock.currentTimeMillis;
+  while (true) {
+    const result = yield* execute(config, request, DispatchedThread).pipe(
+      Effect.asSome,
+      Effect.catchIf(
+        (error) => error.status === 409,
+        () => Effect.succeedNone,
+      ),
+    );
+    if (Option.isSome(result)) return result.value;
+    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
+    if (elapsedMs + DISPATCH_RETRY_MS > DISPATCH_MAX_WAIT_MS) {
+      return yield* new TrevizeApiError({
+        reason: "timeout",
+        message: "The Trevize environment is still starting. Try again in a minute.",
+      });
+    }
+    yield* Effect.sleep(Duration.millis(DISPATCH_RETRY_MS));
+  }
+});
+
 /**
  * Every thread Trevize launched in one workspace, newest first. Spaces group
  * them by their environment's `spaceId`.
