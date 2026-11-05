@@ -316,6 +316,76 @@ describe("Trevize API client", () => {
   );
 });
 
+describe("dispatchThread", () => {
+  const dispatchedJson = {
+    id: "thr_1",
+    threadId: "11111111-1111-4111-8111-111111111111",
+    projectId: "project-1",
+    deepLinkUrl: "https://env-env_1.gw.example.test/x",
+    existing: false,
+  };
+
+  it.effect("retries while the environment is not running yet, with the same dispatch key", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const fiber = yield* TrevizeApi.dispatchThread(config, "env_1", {
+        repositoryId: "acme/web",
+        prompt: "Fix the build",
+        providerInstanceId: "codex",
+        model: "gpt-5.5",
+        dispatchKey: "cloud-session:env_1",
+      }).pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [
+            () => Response.json({ message: "Environment is not running" }, { status: 409 }),
+            () => Response.json(dispatchedJson),
+          ]),
+        ),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("2 seconds");
+      const result = yield* Fiber.join(fiber);
+
+      expect(result.threadId).toBe(dispatchedJson.threadId);
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual(
+        Array.from(
+          { length: 2 },
+          () => "POST https://trevize.example.test/api/v1/environments/env_1/threads",
+        ),
+      );
+      expect(calls.map((call) => JSON.parse(call.body ?? "null"))).toEqual(
+        Array.from({ length: 2 }, () => ({
+          repositoryId: "acme/web",
+          prompt: "Fix the build",
+          providerInstanceId: "codex",
+          model: "gpt-5.5",
+          dispatchKey: "cloud-session:env_1",
+        })),
+      );
+    }),
+  );
+
+  it.effect("fails on other errors without retrying", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const error = yield* TrevizeApi.dispatchThread(config, "env_1", {
+        repositoryId: "acme/other",
+        prompt: "Fix the build",
+      }).pipe(
+        Effect.flip,
+        Effect.provide(
+          layerTrevizeHttp(calls, [
+            () => Response.json({ message: "Unknown repository" }, { status: 400 }),
+          ]),
+        ),
+      );
+
+      expect(error.message).toBe("Unknown repository");
+      expect(calls).toHaveLength(1);
+    }),
+  );
+});
+
 describe("wakeWhenReady", () => {
   const wakeUrl = "POST https://trevize.example.test/api/v1/environments/env_1/wake";
   const connectUrl = "POST https://trevize.example.test/api/v1/environments/env_1/connect";

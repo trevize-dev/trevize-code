@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -23,7 +23,9 @@ import {
   DEFAULT_TREVIZE_API_URL,
   TrevizeApiError,
   archiveSpace as archiveTrevizeSpace,
+  createEnvironment as createTrevizeEnvironment,
   createSpace as createTrevizeSpace,
+  dispatchThread,
   updateSpace as updateTrevizeSpace,
   wakeWhenReady,
   listEnvironments,
@@ -186,6 +188,28 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   spaceThreads: [],
 };
 
+/** A one-off cloud session: one fresh environment running one agent thread. */
+export interface LaunchSessionInput {
+  /** `owner/repo`, cloned into the new environment. */
+  readonly repository: string;
+  /** The thread's first message. */
+  readonly prompt: string;
+  /** Names the environment; defaults to the prompt's first line. */
+  readonly title?: string;
+  /** A T3 provider instance id, e.g. `codex`. */
+  readonly providerInstanceId?: string;
+  readonly model?: string;
+}
+
+/** The environment's title: the given one, else the prompt's first line, shortened. */
+export function cloudSessionTitle(input: Pick<LaunchSessionInput, "title" | "prompt">): string {
+  const title = input.title?.trim() || input.prompt.trim().split("\n", 1)[0]?.trim() || "";
+  if (title.length === 0) return "Cloud session";
+  return title.length > 80 ? `${title.slice(0, 79).trimEnd()}…` : title;
+}
+
+const isThreadId = Schema.is(ThreadId);
+
 /** What a new space needs; the workspace defaults to the one picked in settings. */
 export interface CreateSpaceInput extends Omit<TrevizeSpaceInput, "workspaceId"> {
   readonly workspaceId?: string;
@@ -225,6 +249,17 @@ export class TrevizeCloudSync extends Context.Service<
       patch: TrevizeSpacePatch,
     ) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
     readonly archiveSpace: (spaceId: string) => Effect.Effect<void, TrevizeApiError>;
+    /**
+     * Starts a cloud session: creates a fresh environment for one repository,
+     * waits for it and pairs this device, then starts a thread with the first
+     * prompt. Returns the thread's route; cold starts can take minutes.
+     */
+    readonly launchSession: (
+      input: LaunchSessionInput,
+    ) => Effect.Effect<
+      { readonly environmentId: EnvironmentId; readonly threadId: ThreadId },
+      TrevizeApiError
+    >;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
@@ -629,6 +664,49 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     yield* syncNow;
   });
 
+  const launchSession = Effect.fn("TrevizeCloudSync.launchSession")(function* (
+    input: LaunchSessionInput,
+  ) {
+    const { config, settings } = yield* requireConfig("start a cloud session");
+    const current = yield* SubscriptionRef.get(state);
+    // Spaces are listed exactly for the workspaces with environments enabled.
+    const workspaceId = defaultSpaceWorkspaceId(settings.workspaceId, current.spaceWorkspaceIds);
+    if (workspaceId === null) {
+      return yield* new TrevizeApiError({
+        reason: "request",
+        message: "None of your Trevize workspaces has cloud environments enabled.",
+      });
+    }
+    const environment = yield* createTrevizeEnvironment(config, {
+      workspaceId,
+      repositoryIds: [input.repository],
+      title: cloudSessionTitle(input),
+    }).pipe(Effect.provideContext(context));
+    const environmentId = yield* connectTrevizeEnvironment({ config, environment }).pipe(
+      Effect.provideContext(context),
+      Effect.mapError((error) =>
+        error._tag === "TrevizeApiError"
+          ? error
+          : new TrevizeApiError({ reason: "request", message: error.message }),
+      ),
+    );
+    const dispatched = yield* dispatchThread(config, environment.id, {
+      repositoryId: input.repository,
+      prompt: input.prompt,
+      ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      dispatchKey: `cloud-session:${environment.id}`,
+    }).pipe(Effect.provideContext(context));
+    yield* syncNow;
+    if (!isThreadId(dispatched.threadId)) {
+      return yield* new TrevizeApiError({
+        reason: "decode",
+        message: "Trevize sent an invalid thread id.",
+      });
+    }
+    return { environmentId, threadId: dispatched.threadId };
+  });
+
   // The one sync loop: runs at start, then on request or every interval.
   yield* Effect.gen(function* () {
     while (true) {
@@ -650,6 +728,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     createSpace,
     updateSpace,
     archiveSpace,
+    launchSession,
   });
 });
 

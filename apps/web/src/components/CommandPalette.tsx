@@ -56,6 +56,7 @@ import {
   ChartNoAxesColumnIcon,
   CheckIcon,
   ChevronRightIcon,
+  CloudIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderGit2Icon,
@@ -129,7 +130,14 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../state/environments";
-import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
+import {
+  useProject,
+  useProjects,
+  useServerConfigs,
+  useThreadShells,
+  waitForProject,
+} from "../state/entities";
+import { useCloudSessionRepository } from "../trevize/cloudSessions";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
@@ -515,6 +523,10 @@ function OpenCommandPaletteDialog(props: {
     defaultProjectRef,
     handleNewThread,
   });
+  const contextualProject = useProject(contextualProjectRef);
+  const contextualCloudRepository = useCloudSessionRepository(
+    contextualProject?.repositoryIdentity,
+  );
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
     preferredProjectRef: contextualProjectRef,
@@ -1240,6 +1252,24 @@ function OpenCommandPaletteDialog(props: {
             defaultProjectRef,
             handleNewThread,
           });
+        },
+      });
+    }
+
+    if (contextualProjectRef !== null && contextualProject && contextualCloudRepository !== null) {
+      actionItems.push({
+        kind: "action",
+        value: "action:new-cloud-agent",
+        searchTerms: ["new cloud agent", "cloud", "sandbox", "remote", "trevize", "agent"],
+        title: (
+          <>
+            New cloud agent in <span className="font-semibold">{contextualProject.title}</span>
+          </>
+        ),
+        icon: <CloudIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          // A cloud draft runs in a fresh sandbox, never in a local worktree.
+          await handleNewThread(contextualProjectRef, { envMode: "cloud", worktreePath: null });
         },
       });
     }

@@ -208,3 +208,10 @@ export const archiveSpace = createRuntimeCommand(connectionAtomRuntime, {
   execute: (spaceId: string) =>
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.archiveSpace(spaceId))),
 });
+
+/** Starts a cloud session; resolves with the new thread's route once it runs. */
+export const launchSession = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:launch-session",
+  execute: (input: TrevizeSync.LaunchSessionInput) =>
+    TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.launchSession(input))),
+});

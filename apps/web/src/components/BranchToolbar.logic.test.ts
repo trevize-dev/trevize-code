@@ -92,6 +92,25 @@ describe("resolveEffectiveEnvMode", () => {
   });
 });
 
+describe("resolveEffectiveEnvMode for cloud drafts", () => {
+  it("keeps a draft's cloud choice but never reports a server thread as cloud", () => {
+    expect(
+      resolveEffectiveEnvMode({
+        activeWorktreePath: null,
+        hasServerThread: false,
+        draftThreadEnvMode: "cloud",
+      }),
+    ).toBe("cloud");
+    expect(
+      resolveEffectiveEnvMode({
+        activeWorktreePath: null,
+        hasServerThread: true,
+        draftThreadEnvMode: "cloud",
+      }),
+    ).toBe("local");
+  });
+});
+
 describe("deriveLocalBranchNameFromRemoteRef", () => {
   it("supports remote names that contain slashes", () => {
     expect(deriveLocalBranchNameFromRemoteRef("my-org/upstream/feature/demo")).toBe(

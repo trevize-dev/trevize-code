@@ -98,6 +98,7 @@ import {
   referencedThreadContexts,
 } from "./composerSend.logic";
 import { usePlanFollowUpSend } from "./useProposedPlanSend";
+import { useCloudSessionRepository, useLaunchCloudSession } from "../../trevize/cloudSessions";
 import { useMultipleModelSend } from "./useMultipleModelSend";
 import { type ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import {
@@ -392,6 +393,9 @@ export function useComposerSend(input: ComposerSendInput) {
   });
   const { sendInFlight: sendInFlightRef } = draftSendState(routeThreadKey);
   const composerSendGenerationRef = useRef(0);
+  const cloudRepository = useCloudSessionRepository(activeProject?.repositoryIdentity);
+  const launchCloudSession = useLaunchCloudSession();
+  const cloudLaunchesInFlightRef = useRef(new Set<string>());
   const environmentUnavailableSendToastSlotRef = useRef(0);
   // A send awaits uploads before it declines, so it reads the approvals pending by then.
   const pendingApprovalsRef = useRef(pendingApprovals);
@@ -401,6 +405,65 @@ export function useComposerSend(input: ComposerSendInput) {
     pendingApprovalsRef.current = pendingApprovals;
     respondingRequestIdsRef.current = respondingRequestIds;
   }, [pendingApprovals, respondingRequestIds]);
+
+  /**
+   * A cloud draft's send: Trevize starts a fresh sandbox and a thread there
+   * with this prompt, so nothing is sent to this environment. The draft is
+   * emptied while it starts and gets its prompt back if starting fails.
+   */
+  const sendToCloud = async (cloud: {
+    repository: string;
+    prompt: string;
+    hasOtherContent: boolean;
+    provider: Parameters<typeof formatOutgoingPrompt>[0]["provider"];
+    model: string;
+    models: Parameters<typeof formatOutgoingPrompt>[0]["models"];
+    effort: string | null;
+  }) => {
+    if (cloud.hasOtherContent) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Cloud sessions start from text only",
+          description: "Remove attachments and context, or start on this machine.",
+        }),
+      );
+      return;
+    }
+    const text = cloud.prompt.trim();
+    if (text.length === 0) return;
+    const launchKey = routeThreadKey;
+    if (cloudLaunchesInFlightRef.current.has(launchKey)) return;
+    const prompt = formatOutgoingPrompt({
+      provider: cloud.provider,
+      model: cloud.model,
+      models: cloud.models,
+      effort: cloud.effort,
+      text,
+    });
+    if (composerRef.current?.validateProviderInput(prompt) === false) return;
+    const draftTarget = composerDraftTarget;
+    cloudLaunchesInFlightRef.current.add(launchKey);
+    promptRef.current = "";
+    clearComposerDraftContent(draftTarget);
+    composerRef.current?.resetCursorState();
+    try {
+      const launched = await launchCloudSession(
+        {
+          repository: cloud.repository,
+          prompt,
+          providerInstanceId: cloud.provider,
+          model: cloud.model,
+        },
+        () => currentRouteThreadKeyRef.current === launchKey,
+      );
+      if (!launched && !useComposerDraftStore.getState().getComposerDraft(draftTarget)?.prompt) {
+        setComposerDraftPrompt(draftTarget, cloud.prompt);
+      }
+    } finally {
+      cloudLaunchesInFlightRef.current.delete(launchKey);
+    }
+  };
 
   const onSend = async (
     e?: { preventDefault: () => void },
@@ -833,6 +896,25 @@ export function useComposerSend(input: ComposerSendInput) {
           description: "This draft no longer points to an available project.",
         }),
       );
+      return;
+    }
+    if (sendEnvMode === "cloud" && isLocalDraftThread && cloudRepository !== null) {
+      await sendToCloud({
+        repository: cloudRepository,
+        prompt: promptForSend,
+        hasOtherContent:
+          composerImages.length > 0 ||
+          composerFiles.length > 0 ||
+          sendableComposerTerminalContexts.length > 0 ||
+          composerPreviewAnnotations.length > 0 ||
+          composerReviewComments.length > 0 ||
+          composerThreadContexts.length > 0 ||
+          composerEnvironmentContexts.length > 0,
+        provider: ctxSelectedProvider,
+        model: ctxSelectedModel,
+        models: ctxSelectedProviderModels,
+        effort: ctxSelectedPromptEffort,
+      });
       return;
     }
     const threadIdForSend = activeThread.id;
