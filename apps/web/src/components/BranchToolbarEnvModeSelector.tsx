@@ -10,7 +10,9 @@ import {
   type EnvMode,
 } from "./BranchToolbar.logic";
 import { useComposerMenuProps } from "./chat/composerEventScope";
+import { CONNECT_CLOUD_SELECT_VALUE, CloudItemContent, cloudSelectValue } from "./CloudItemContent";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
+import { openTrevizePage, type CloudPlacement } from "../trevize/cloudSessions";
 import {
   Select,
   SelectGroup,
@@ -33,7 +35,7 @@ interface BranchToolbarEnvModeSelectorProps {
   activeWorktreePath: string | null;
   onEnvModeChange: (mode: EnvMode) => void;
   /** Offers "Cloud": this is a draft of a project Trevize Cloud can run. */
-  cloudAvailable: boolean;
+  cloud: CloudPlacement | null;
   previousWorktreeLabel?: string | null;
   previousWorktreeBranch?: string | null;
   onUsePreviousWorktree?: () => void;
@@ -45,7 +47,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   effectiveEnvMode,
   activeWorktreePath,
   onEnvModeChange,
-  cloudAvailable,
+  cloud,
   previousWorktreeLabel,
   previousWorktreeBranch = null,
   onUsePreviousWorktree,
@@ -62,7 +64,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       label: resolveCurrentWorkspaceLabel(activeWorktreePath),
     },
     { value: "worktree", label: resolveEnvModeLabel("worktree") },
-    ...(cloudAvailable ? [{ value: "cloud", label: resolveEnvModeLabel("cloud") }] : []),
+    ...(cloud ? [{ value: cloudSelectValue(cloud), label: resolveEnvModeLabel("cloud") }] : []),
     ...(showPreviousWorktree && previousWorktreeLabel
       ? [{ value: PREVIOUS_WORKTREE_SELECT_VALUE, label: previousWorktreeLabel }]
       : []),
@@ -116,6 +118,10 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           onUsePreviousWorktree?.();
           return;
         }
+        if (value === CONNECT_CLOUD_SELECT_VALUE) {
+          if (cloud?.connectUrl) openTrevizePage(cloud.connectUrl);
+          return;
+        }
         onEnvModeChange(value as EnvMode);
       }}
       items={envModeItems}
@@ -149,7 +155,9 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
         <TooltipPopup>
           {effectiveEnvMode === "local"
             ? resolveCurrentWorkspaceLabel(activeWorktreePath)
-            : resolveEnvModeLabel(effectiveEnvMode)}
+            : effectiveEnvMode === "cloud" && cloud?.workspaceName
+              ? `Cloud · ${cloud.workspaceName}`
+              : resolveEnvModeLabel(effectiveEnvMode)}
           {shortcutLabel ? ` · ${shortcutLabel}` : null}
         </TooltipPopup>
       </Tooltip>
@@ -176,12 +184,9 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
               {resolveEnvModeLabel("worktree")}
             </span>
           </SelectItem>
-          {cloudAvailable ? (
-            <SelectItem value="cloud">
-              <span className="inline-flex items-center gap-1.5">
-                <CloudIcon className="size-3" />
-                {resolveEnvModeLabel("cloud")}
-              </span>
+          {cloud ? (
+            <SelectItem value={cloudSelectValue(cloud)}>
+              <CloudItemContent placement={cloud} />
             </SelectItem>
           ) : null}
           {showPreviousWorktree && previousWorktreeLabel ? (

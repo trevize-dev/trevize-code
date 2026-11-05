@@ -23,6 +23,7 @@ import * as ConnectionWakeups from "../connection/wakeups.ts";
 import {
   DEFAULT_TREVIZE_API_URL,
   TrevizeApiError,
+  TrevizeRepositoryNotConnectedError,
   archiveSpace as archiveTrevizeSpace,
   createEnvironment as createTrevizeEnvironment,
   createSpace as createTrevizeSpace,
@@ -30,6 +31,7 @@ import {
   updateSpace as updateTrevizeSpace,
   wakeWhenReady,
   listEnvironments,
+  listRepositories,
   listSpaces,
   listWorkspaceThreads,
   listWorkspaces,
@@ -39,6 +41,7 @@ import {
   type TrevizeSpaceInput,
   type TrevizeSpacePatch,
   type TrevizeThread,
+  type TrevizeWorkspace,
 } from "./api.ts";
 import {
   connectTrevizeEnvironment,
@@ -47,7 +50,7 @@ import {
   trevizeOrigin,
 } from "./connect.ts";
 import { resolveMyTaskTarget } from "./myTasks.ts";
-import { defaultSpaceWorkspaceId } from "./spaces.ts";
+import { connectRepositoriesUrl, connectedRepositoryKeys, placeRepositories } from "./spaces.ts";
 
 /**
  * Non-secret Trevize settings, kept per client. The API key lives in the
@@ -174,6 +177,13 @@ export interface TrevizeCloudSyncState {
   readonly spaces: ReadonlyArray<TrevizeSpace>;
   /** Threads of those workspaces that run in a space's environment. */
   readonly spaceThreads: ReadonlyArray<TrevizeThread>;
+  /** Every workspace the user can see. */
+  readonly workspaces: ReadonlyArray<TrevizeWorkspace>;
+  /**
+   * Connected repository keys (`connectedRepositoryKeys`) of the workspaces
+   * with spaces; a workspace whose listing failed is missing.
+   */
+  readonly connectedRepositories: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
@@ -187,6 +197,8 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   spaceWorkspaceIds: [],
   spaces: [],
   spaceThreads: [],
+  workspaces: [],
+  connectedRepositories: new Map(),
 };
 
 /** A one-off cloud session: one fresh environment running one agent thread. */
@@ -212,7 +224,7 @@ export function hasCloudEnvironments(
   return state.signedIn && state.spaceWorkspaceIds.length > 0;
 }
 
-/** What a new space needs; the workspace defaults to the one picked in settings. */
+/** What a new space needs; the workspace defaults to one that has all its repositories. */
 export interface CreateSpaceInput extends Omit<TrevizeSpaceInput, "workspaceId"> {
   readonly workspaceId?: string;
 }
@@ -244,7 +256,9 @@ export class TrevizeCloudSync extends Context.Service<
      * Creates a space; Trevize launches its orchestrator in the background,
      * and a later listing carries its thread. Returns once the space exists.
      */
-    readonly createSpace: (input: CreateSpaceInput) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
+    readonly createSpace: (
+      input: CreateSpaceInput,
+    ) => Effect.Effect<TrevizeSpace, TrevizeApiError | TrevizeRepositoryNotConnectedError>;
     /** Saves a space's settings and shows them without waiting for the next listing. */
     readonly updateSpace: (
       spaceId: string,
@@ -260,7 +274,7 @@ export class TrevizeCloudSync extends Context.Service<
       input: LaunchSessionInput,
     ) => Effect.Effect<
       { readonly environmentId: EnvironmentId; readonly threadId: ThreadId },
-      TrevizeApiError
+      TrevizeApiError | TrevizeRepositoryNotConnectedError
     >;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
@@ -402,6 +416,28 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       ),
     );
 
+    // Best effort per workspace: a failed listing keeps what the last one saw.
+    const previousRepositories = (yield* SubscriptionRef.get(state)).connectedRepositories;
+    const connectedRepositories = new Map(
+      yield* Effect.forEach(
+        Option.match(spaceListing, {
+          onNone: () => [...previousRepositories.keys()],
+          onSome: (merged) => merged.spaceWorkspaceIds,
+        }),
+        (workspaceId) =>
+          listRepositories(config, workspaceId).pipe(
+            Effect.provideContext(context),
+            Effect.map((repositories) => [connectedRepositoryKeys(repositories)]),
+            Effect.orElseSucceed(() => {
+              const previous = previousRepositories.get(workspaceId);
+              return previous === undefined ? [] : [previous];
+            }),
+            Effect.map((keys) => keys.map((value) => [workspaceId, value] as const)),
+          ),
+        { concurrency: 4 },
+      ).pipe(Effect.map((entries) => entries.flat())),
+    );
+
     const saved = [...(yield* SubscriptionRef.get(registry.entries)).values()];
     const rejectedCredentials = new Set<EnvironmentId>();
     for (const entry of saved) {
@@ -497,6 +533,8 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       error: null,
       environments,
       sleeping,
+      workspaces,
+      connectedRepositories,
       ...Option.getOrElse(spaceListing, () => ({
         spaceWorkspaceIds: current.spaceWorkspaceIds,
         spaces: current.spaces,
@@ -622,19 +660,70 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       ),
     );
 
+  /**
+   * The workspace with all of `repositoryIds` connected, the default one first.
+   * Trusts a match the last sync saw; otherwise lists repositories again, since
+   * the user may have just connected one.
+   */
+  const workspaceForRepositories = Effect.fn("TrevizeCloudSync.workspaceForRepositories")(
+    function* (
+      config: TrevizeApiConfig,
+      settingsWorkspaceId: string | null,
+      repositoryIds: ReadonlyArray<string>,
+    ) {
+      const place = (current: TrevizeCloudSyncState) =>
+        placeRepositories({
+          preferredWorkspaceId: settingsWorkspaceId,
+          spaceWorkspaceIds: current.spaceWorkspaceIds,
+          connectedRepositories: current.connectedRepositories,
+          repositoryIds,
+        });
+      const synced = place(yield* SubscriptionRef.get(state));
+      if (synced === null) {
+        return yield* new TrevizeApiError({
+          reason: "request",
+          message: "None of your Trevize workspaces has cloud environments enabled.",
+        });
+      }
+      if (synced._tag === "Connected") return synced.workspaceId;
+
+      const { spaceWorkspaceIds } = yield* SubscriptionRef.get(state);
+      const listed = yield* Effect.forEach(
+        spaceWorkspaceIds,
+        (workspaceId) =>
+          listRepositories(config, workspaceId).pipe(
+            Effect.provideContext(context),
+            Effect.map((repositories) => [
+              [workspaceId, connectedRepositoryKeys(repositories)] as const,
+            ]),
+            Effect.orElseSucceed(() => []),
+          ),
+        { concurrency: "unbounded" },
+      );
+      const fresh = yield* SubscriptionRef.updateAndGet(state, (current) => ({
+        ...current,
+        connectedRepositories: new Map([...current.connectedRepositories, ...listed.flat()]),
+      }));
+      const placement = place(fresh) ?? synced;
+      // Unknown: some listing failed; let Trevize decide in the default workspace.
+      if (placement._tag !== "NotConnected") return placement.workspaceId;
+      const workspace = fresh.workspaces.find(
+        (candidate) => candidate.id === placement.workspaceId,
+      );
+      return yield* new TrevizeRepositoryNotConnectedError({
+        repositoryIds,
+        connectUrl: workspace ? connectRepositoriesUrl(config.baseUrl, workspace.slug) : null,
+      });
+    },
+  );
+
   const createSpace = Effect.fn("TrevizeCloudSync.createSpace")(function* (
     input: CreateSpaceInput,
   ) {
     const { config, settings } = yield* requireConfig("create a space");
-    const current = yield* SubscriptionRef.get(state);
     const workspaceId =
-      input.workspaceId ?? defaultSpaceWorkspaceId(settings.workspaceId, current.spaceWorkspaceIds);
-    if (workspaceId === null) {
-      return yield* new TrevizeApiError({
-        reason: "request",
-        message: "None of your Trevize workspaces has spaces enabled.",
-      });
-    }
+      input.workspaceId ??
+      (yield* workspaceForRepositories(config, settings.workspaceId, input.repositoryIds));
     const space = yield* createTrevizeSpace(config, { ...input, workspaceId }).pipe(
       Effect.provideContext(context),
     );
@@ -674,15 +763,9 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     input: LaunchSessionInput,
   ) {
     const { config, settings } = yield* requireConfig("start a cloud session");
-    const current = yield* SubscriptionRef.get(state);
-    // Spaces are listed exactly for the workspaces with environments enabled.
-    const workspaceId = defaultSpaceWorkspaceId(settings.workspaceId, current.spaceWorkspaceIds);
-    if (workspaceId === null) {
-      return yield* new TrevizeApiError({
-        reason: "request",
-        message: "None of your Trevize workspaces has cloud environments enabled.",
-      });
-    }
+    const workspaceId = yield* workspaceForRepositories(config, settings.workspaceId, [
+      input.repository,
+    ]);
     const environment = yield* createTrevizeEnvironment(config, {
       workspaceId,
       repositoryIds: [input.repository],

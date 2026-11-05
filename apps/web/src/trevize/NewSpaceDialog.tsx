@@ -3,9 +3,10 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { TrevizeSpaces } from "@t3tools/client-runtime/trevize";
+import { TrevizeRepositoryNotConnectedError, TrevizeSpaces } from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
@@ -42,8 +43,11 @@ import { useProjects } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { describeCloudPlacement, openTrevizePage, useTrevizeClientSettings } from "./cloudSessions";
 import * as Trevize from "./commands";
 import { useNewSpaceDialogStore } from "./Spaces";
+
+const isRepositoryNotConnected = Schema.is(TrevizeRepositoryNotConnectedError);
 
 interface CloudProject {
   /** `owner/repo`, what Trevize clones. */
@@ -140,6 +144,22 @@ function OrchestratorModelField(props: {
   );
 }
 
+/** Opens the Trevize page that connects repositories, without toggling a surrounding label. */
+function ConnectLink(props: { readonly url: string; readonly children: ReactNode }) {
+  return (
+    <Button
+      size="xs"
+      variant="link"
+      onClick={(event) => {
+        event.preventDefault();
+        openTrevizePage(props.url);
+      }}
+    >
+      {props.children}
+    </Button>
+  );
+}
+
 /** Mounted once in the chat layout; opened through `openNewSpaceDialog`. */
 export function NewSpaceDialogHost() {
   const open = useNewSpaceDialogStore((state) => state.open);
@@ -161,8 +181,17 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
   const nameId = useId();
   const instructionsId = useId();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const sync = useAtomValue(Trevize.syncStateValueAtom);
+  const trevizeSettings = useTrevizeClientSettings();
+  const placementOf = (repositoryIds: ReadonlyArray<string>) =>
+    describeCloudPlacement(sync, trevizeSettings, repositoryIds);
+  const pickedPlacement = picked.size > 0 ? placementOf([...picked]) : null;
 
-  const canCreate = name.trim().length > 0 && picked.size > 0 && !saving;
+  const canCreate =
+    name.trim().length > 0 &&
+    picked.size > 0 &&
+    pickedPlacement?.status !== "not-connected" &&
+    !saving;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -182,10 +211,19 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
     }
     if (isAtomCommandInterrupted(result)) return;
     const error = squashAtomCommandFailure(result);
+    const connectUrl = isRepositoryNotConnected(error) ? error.connectUrl : null;
     toastManager.add({
       type: "error",
       title: "Could not create space",
       description: error instanceof Error ? error.message : "Trevize did not create it.",
+      ...(connectUrl
+        ? {
+            actionProps: {
+              children: "Connect repository",
+              onClick: () => openTrevizePage(connectUrl),
+            },
+          }
+        : {}),
     });
   };
 
@@ -225,7 +263,22 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
 
               <Field
                 label="Projects"
-                hint="Cloned into every environment of the space. Projects without a GitHub remote can't run in the cloud and aren't listed."
+                hint={
+                  pickedPlacement?.status === "not-connected" ? (
+                    <>
+                      No Trevize workspace has all of these projects connected.{" "}
+                      {pickedPlacement.connectUrl ? (
+                        <ConnectLink url={pickedPlacement.connectUrl}>
+                          Connect them on Trevize
+                        </ConnectLink>
+                      ) : null}
+                    </>
+                  ) : pickedPlacement?.workspaceName ? (
+                    `Runs in the ${pickedPlacement.workspaceName} workspace, which has these projects connected.`
+                  ) : (
+                    "Cloned into every environment of the space. Projects without a GitHub remote can't run in the cloud and aren't listed."
+                  )
+                }
               >
                 {projects.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
@@ -233,27 +286,35 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
                   </p>
                 ) : (
                   <ul className="max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border">
-                    {projects.map((project) => (
-                      <li key={project.slug}>
-                        <label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
-                          <Checkbox
-                            checked={picked.has(project.slug)}
-                            onCheckedChange={(checked) =>
-                              setPicked((current) => {
-                                const next = new Set(current);
-                                if (checked) next.add(project.slug);
-                                else next.delete(project.slug);
-                                return next;
-                              })
-                            }
-                          />
-                          <span className="min-w-0 flex-1 truncate">{project.title}</span>
-                          <span className="truncate text-xs text-muted-foreground">
-                            {project.slug}
-                          </span>
-                        </label>
-                      </li>
-                    ))}
+                    {projects.map((project) => {
+                      const connectUrl = placementOf([project.slug])?.connectUrl ?? null;
+                      return (
+                        <li key={project.slug}>
+                          <label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
+                            <Checkbox
+                              disabled={connectUrl !== null && !picked.has(project.slug)}
+                              checked={picked.has(project.slug)}
+                              onCheckedChange={(checked) =>
+                                setPicked((current) => {
+                                  const next = new Set(current);
+                                  if (checked) next.add(project.slug);
+                                  else next.delete(project.slug);
+                                  return next;
+                                })
+                              }
+                            />
+                            <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                            {connectUrl ? (
+                              <ConnectLink url={connectUrl}>Connect on Trevize</ConnectLink>
+                            ) : (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {project.slug}
+                              </span>
+                            )}
+                          </label>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </Field>

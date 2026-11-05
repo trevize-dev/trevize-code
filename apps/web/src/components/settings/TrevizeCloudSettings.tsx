@@ -532,8 +532,8 @@ function TrevizeWorkspaceEnvironments({
   return (
     <>
       <SettingsRow
-        title="Workspace"
-        description={`Signed in to ${new URL(config.baseUrl).host}.`}
+        title="Default workspace"
+        description={`Cloud sessions and spaces run in the workspace that has their repositories connected, this one first. Signed in to ${new URL(config.baseUrl).host}.`}
         control={
           <div className="flex items-center gap-2">
             <Select
@@ -542,7 +542,11 @@ function TrevizeWorkspaceEnvironments({
                 if (typeof value === "string" && value) onWorkspaceChange(value);
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Trevize workspace">
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-56"
+                aria-label="Default Trevize workspace"
+              >
                 <SelectValue>{selectedWorkspace?.name ?? "Select a workspace"}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
