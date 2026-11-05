@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { ThreadId } from "@t3tools/contracts";
 
 /**
  * Client for the Trevize public API (`/api/v1`). Trevize runs T3 servers in
@@ -185,6 +186,22 @@ export class TrevizeApiError extends Schema.TaggedError<TrevizeApiError>()("Trev
   status: Schema.optional(Schema.Number),
 }) {}
 
+/** No Trevize workspace with environments has all of `repositoryIds` connected. */
+export class TrevizeRepositoryNotConnectedError extends Schema.TaggedError<TrevizeRepositoryNotConnectedError>()(
+  "TrevizeRepositoryNotConnectedError",
+  {
+    repositoryIds: Schema.Array(Schema.String),
+    /** Where to connect them: the default workspace's GitHub settings on Trevize. */
+    connectUrl: Schema.NullOr(Schema.String),
+  },
+) {
+  override get message(): string {
+    return this.repositoryIds.length === 1
+      ? `Repository ${this.repositoryIds[0]} is not connected to any of your Trevize workspaces.`
+      : `None of your Trevize workspaces has all of ${this.repositoryIds.join(", ")} connected.`;
+  }
+}
+
 export function normalizeTrevizeBaseUrl(value: string): string {
   const trimmed = value.trim() || DEFAULT_TREVIZE_API_URL;
   const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
@@ -214,29 +231,31 @@ const failureFromResponse = (response: HttpClientResponse.HttpClientResponse) =>
   );
 
 /** Sends an authenticated request; any HTTP status is a success here. */
-const send = (config: TrevizeApiConfig, request: HttpClientRequest.HttpClientRequest) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient;
-    return yield* client
-      .execute(
-        request.pipe(
-          HttpClientRequest.bearerToken(config.apiKey.trim()),
-          HttpClientRequest.acceptJson,
-        ),
-      )
-      .pipe(
-        // Trevize's CORS policy does not allow `traceparent`/`b3`, so a
-        // propagated trace header would fail the browser preflight.
-        Effect.provideService(HttpClient.TracerPropagationEnabled, false),
-        Effect.mapError(
-          (cause) =>
-            new TrevizeApiError({
-              reason: "network",
-              message: `Could not reach Trevize: ${cause.message}`,
-            }),
-        ),
-      );
-  });
+const send = Effect.fn("clientRuntime.trevize.send")(function* (
+  config: TrevizeApiConfig,
+  request: HttpClientRequest.HttpClientRequest,
+) {
+  const client = yield* HttpClient.HttpClient;
+  return yield* client
+    .execute(
+      request.pipe(
+        HttpClientRequest.bearerToken(config.apiKey.trim()),
+        HttpClientRequest.acceptJson,
+      ),
+    )
+    .pipe(
+      // Trevize's CORS policy does not allow `traceparent`/`b3`, so a
+      // propagated trace header would fail the browser preflight.
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.mapError(
+        (cause) =>
+          new TrevizeApiError({
+            reason: "network",
+            message: `Could not reach Trevize: ${cause.message}`,
+          }),
+      ),
+    );
+});
 
 const decodeResponse = <S extends Schema.Constraint>(
   response: HttpClientResponse.HttpClientResponse,
@@ -254,18 +273,17 @@ const decodeResponse = <S extends Schema.Constraint>(
     ),
   );
 
-const execute = <S extends Schema.Constraint>(
+const execute = Effect.fn("clientRuntime.trevize.execute")(function* <S extends Schema.Constraint>(
   config: TrevizeApiConfig,
   request: HttpClientRequest.HttpClientRequest,
   schema: S,
-) =>
-  Effect.gen(function* () {
-    const response = yield* send(config, request);
-    if (response.status < 200 || response.status >= 300) {
-      return yield* failureFromResponse(response);
-    }
-    return yield* decodeResponse(response, schema);
-  });
+) {
+  const response = yield* send(config, request);
+  if (response.status < 200 || response.status >= 300) {
+    return yield* failureFromResponse(response);
+  }
+  return yield* decodeResponse(response, schema);
+});
 
 export const listWorkspaces = Effect.fn("clientRuntime.trevize.listWorkspaces")(function* (
   config: TrevizeApiConfig,
@@ -421,7 +439,7 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
       ),
       TrevizeWakeResult,
     ).pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       // An older Trevize without `wake`.
       Effect.catchIf(
         (error) => error.status === 404,
@@ -458,6 +476,66 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
       });
     }
     yield* Effect.sleep(Duration.millis(delayMs));
+  }
+});
+
+/** Only the runtime thread id matters to the client: it opens the thread with it. */
+const DispatchedThread = Schema.Struct({ threadId: ThreadId });
+
+export interface TrevizeThreadDispatchInput {
+  /** `owner/repo` or a Trevize repository id; must be one of the environment's. */
+  readonly repositoryId: string;
+  readonly prompt: string;
+  /** A T3 provider instance id, e.g. `codex`; the environment's default otherwise. */
+  readonly providerInstanceId?: string;
+  readonly model?: string;
+  /** Makes retries idempotent: a repeat returns the thread the first call started. */
+  readonly dispatchKey?: string;
+}
+
+/** How long a just-connected environment may keep answering 409 before launching gives up. */
+const DISPATCH_MAX_WAIT_MS = 60_000;
+const DISPATCH_RETRY_MS = 2_000;
+
+/**
+ * Starts a thread with a first prompt in an environment. Trevize answers 409
+ * while the environment is not running yet, so that is retried briefly; pass
+ * a `dispatchKey` so a retry never starts a second thread.
+ */
+export const dispatchThread = Effect.fn("clientRuntime.trevize.dispatchThread")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+  input: TrevizeThreadDispatchInput,
+) {
+  const request = HttpClientRequest.post(
+    apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/threads`),
+  ).pipe(
+    HttpClientRequest.bodyJsonUnsafe({
+      repositoryId: input.repositoryId,
+      prompt: input.prompt,
+      ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.dispatchKey ? { dispatchKey: input.dispatchKey } : {}),
+    }),
+  );
+  const startedAt = yield* Clock.currentTimeMillis;
+  while (true) {
+    const result = yield* execute(config, request, DispatchedThread).pipe(
+      Effect.asSome,
+      Effect.catchIf(
+        (error) => error.status === 409,
+        () => Effect.succeedNone,
+      ),
+    );
+    if (Option.isSome(result)) return result.value;
+    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
+    if (elapsedMs + DISPATCH_RETRY_MS > DISPATCH_MAX_WAIT_MS) {
+      return yield* new TrevizeApiError({
+        reason: "timeout",
+        message: "The Trevize environment is still starting. Try again in a minute.",
+      });
+    }
+    yield* Effect.sleep(Duration.millis(DISPATCH_RETRY_MS));
   }
 });
 

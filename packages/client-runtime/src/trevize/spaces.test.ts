@@ -8,6 +8,7 @@ import type { TrevizeSpace, TrevizeThread } from "./api.ts";
 import {
   closeSpaceTab,
   defaultSpaceWorkspaceId,
+  placeRepositories,
   githubRepositorySlug,
   normalizeSpaceColor,
   openSpaceTab,
@@ -133,6 +134,54 @@ describe("defaultSpaceWorkspaceId", () => {
     expect(defaultSpaceWorkspaceId("ws_2", ["ws_1", "ws_2"])).toBe("ws_2");
     expect(defaultSpaceWorkspaceId("ws_3", ["ws_1", "ws_2"])).toBe("ws_1");
     expect(defaultSpaceWorkspaceId(null, [])).toBeNull();
+  });
+});
+
+describe("placeRepositories", () => {
+  const place = (
+    repositoryIds: ReadonlyArray<string>,
+    connected: Record<string, ReadonlyArray<string>>,
+    preferredWorkspaceId: string | null = null,
+  ) =>
+    placeRepositories({
+      preferredWorkspaceId,
+      spaceWorkspaceIds: ["ws_1", "ws_2"],
+      connectedRepositories: new Map(
+        Object.entries(connected).map(([id, repositories]) => [id, new Set(repositories)]),
+      ),
+      repositoryIds,
+    });
+
+  it("picks the first workspace with every repository, the default one first", () => {
+    const connected = { ws_1: ["acme/web"], ws_2: ["acme/web", "acme/api"] };
+    expect(place(["Acme/Web"], connected)).toEqual({ _tag: "Connected", workspaceId: "ws_1" });
+    expect(place(["acme/web"], connected, "ws_2")).toEqual({
+      _tag: "Connected",
+      workspaceId: "ws_2",
+    });
+    expect(place(["acme/web", "acme/api"], connected)).toEqual({
+      _tag: "Connected",
+      workspaceId: "ws_2",
+    });
+  });
+
+  it("tells not connected from unknown, pointing at the default workspace", () => {
+    expect(place(["acme/docs"], { ws_1: [], ws_2: [] }, "ws_2")).toEqual({
+      _tag: "NotConnected",
+      workspaceId: "ws_2",
+    });
+    expect(place(["acme/docs"], { ws_1: [] })).toEqual({ _tag: "Unknown", workspaceId: "ws_1" });
+  });
+
+  it("is null without a workspace that has environments", () => {
+    expect(
+      placeRepositories({
+        preferredWorkspaceId: null,
+        spaceWorkspaceIds: [],
+        connectedRepositories: new Map(),
+        repositoryIds: ["acme/web"],
+      }),
+    ).toBeNull();
   });
 });
 

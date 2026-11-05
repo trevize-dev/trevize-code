@@ -1,7 +1,14 @@
 import type { EnvironmentId, RepositoryIdentity } from "@t3tools/contracts";
 
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
-import type { TrevizeEnvironment, TrevizeSpace, TrevizeSpacePatch, TrevizeThread } from "./api.ts";
+import {
+  normalizeTrevizeBaseUrl,
+  type TrevizeEnvironment,
+  type TrevizeRepository,
+  type TrevizeSpace,
+  type TrevizeSpacePatch,
+  type TrevizeThread,
+} from "./api.ts";
 import { findSavedTrevizeEnvironment } from "./connect.ts";
 import { deriveMyTaskStatus, myTaskActivityAt } from "./myTasks.ts";
 
@@ -199,7 +206,7 @@ export function githubRepositorySlug(
   return `${owner}/${repo}`;
 }
 
-/** The workspace new spaces go to: the one picked in settings when it has spaces, else the first that does. */
+/** The default workspace for cloud work: the one picked in settings when it has spaces, else the first that does. */
 export function defaultSpaceWorkspaceId(
   preferred: string | null,
   available: ReadonlyArray<string>,
@@ -208,11 +215,60 @@ export function defaultSpaceWorkspaceId(
   return available[0] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Tabs: the space chat first, then opened agents. The active tab lives in the
-// route; `null` is the orchestrator.
-// ---------------------------------------------------------------------------
+/** How `connectedRepositories` names a repository: its lowercased `owner/repo` and its Trevize id. */
+export function connectedRepositoryKeys(
+  repositories: ReadonlyArray<TrevizeRepository>,
+): ReadonlySet<string> {
+  return new Set(
+    repositories.flatMap((repository) => [
+      repository.fullName.toLowerCase(),
+      String(repository.id),
+    ]),
+  );
+}
 
+/**
+ * Where cloud work on some repositories runs: the first workspace, default
+ * first, with all of them `Connected`. Otherwise the default workspace, where
+ * to connect them (`NotConnected`) or a guess when some listing failed (`Unknown`).
+ */
+export type RepositoryPlacement =
+  | { readonly _tag: "Connected"; readonly workspaceId: string }
+  | { readonly _tag: "NotConnected"; readonly workspaceId: string }
+  | { readonly _tag: "Unknown"; readonly workspaceId: string };
+
+/** Places `repositoryIds` (`owner/repo` or Trevize ids); null when no workspace has environments. */
+export function placeRepositories(input: {
+  readonly preferredWorkspaceId: string | null;
+  /** Workspaces with environments, as the sync lists them. */
+  readonly spaceWorkspaceIds: ReadonlyArray<string>;
+  /** Connected repository keys per workspace; a missing workspace is unknown. */
+  readonly connectedRepositories: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly repositoryIds: ReadonlyArray<string>;
+}): RepositoryPlacement | null {
+  const preferred = defaultSpaceWorkspaceId(input.preferredWorkspaceId, input.spaceWorkspaceIds);
+  if (preferred === null) return null;
+  const candidates = [
+    preferred,
+    ...input.spaceWorkspaceIds.filter((candidate) => candidate !== preferred),
+  ];
+  const wanted = input.repositoryIds.map((repository) => repository.toLowerCase());
+  const connected = candidates.find((workspaceId) => {
+    const keys = input.connectedRepositories.get(workspaceId);
+    return keys !== undefined && wanted.every((repository) => keys.has(repository));
+  });
+  if (connected !== undefined) return { _tag: "Connected", workspaceId: connected };
+  if (wanted.length === 0) return { _tag: "Connected", workspaceId: preferred };
+  const known = candidates.every((workspaceId) => input.connectedRepositories.has(workspaceId));
+  return { _tag: known ? "NotConnected" : "Unknown", workspaceId: preferred };
+}
+
+/** The Trevize page where a workspace connects GitHub repositories. */
+export function connectRepositoriesUrl(baseUrl: string, workspaceSlug: string): string {
+  return `${normalizeTrevizeBaseUrl(baseUrl)}/${encodeURIComponent(workspaceSlug)}/settings/integrations/github`;
+}
+
+/** Space tabs: the space chat first, then opened agents. The active tab lives in the route; `null` is the orchestrator. */
 export function openSpaceTab(tabs: ReadonlyArray<string>, threadId: string): ReadonlyArray<string> {
   return tabs.includes(threadId) ? tabs : [...tabs, threadId];
 }

@@ -6,7 +6,7 @@ import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/enviro
 import { TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { useNavigate } from "@tanstack/react-router";
 import { ArchiveIcon, MoreHorizontalIcon, PlusIcon, SettingsIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
 import ChatView from "~/components/ChatView";
@@ -116,14 +116,8 @@ function SpaceContent({
   readonly state: SpacesState;
 }) {
   const navigate = useNavigate();
-  const threads = useMemo(
-    () => TrevizeSpaces.spaceThreads(space.id, state.threads, state.environments),
-    [space.id, state.environments, state.threads],
-  );
-  const agents = useMemo(
-    () => TrevizeSpaces.spaceAgents(space, state.threads, state.environments),
-    [space, state.environments, state.threads],
-  );
+  const threads = TrevizeSpaces.spaceThreads(space.id, state.threads, state.environments);
+  const agents = TrevizeSpaces.spaceAgents(space, state.threads, state.environments);
   const orchestrator = TrevizeSpaces.findOrchestratorThread(space, threads);
   const [openTabs, setOpenTabs] = useLocalStorage(
     spaceTabsStorageKey(space.id),
@@ -151,12 +145,13 @@ function SpaceContent({
   // A link straight to an agent (e.g. from the palette) opens its tab too. Keyed
   // on the route only: closing the active tab drops it before the navigation
   // away lands, and reacting to `openTabs` would re-add it in between.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the routed tab into the persisted open-tabs list
   useEffect(() => {
     if (tab !== null) setOpenTabs((current) => TrevizeSpaces.openSpaceTab(current, tab));
   }, [setOpenTabs, tab]);
 
   const target = useSpaceThreadTarget(activeThread);
-  const ref = useMemo(() => savedThreadRef(target), [target]);
+  const ref = savedThreadRef(target);
   const shell = useThreadShell(ref);
   const environment = useEnvironment(ref?.environmentId ?? null);
   // ChatView wakes its own environment; this covers the wait before it mounts.
@@ -166,6 +161,7 @@ function SpaceContent({
   );
   const connectError = useConnectSpaceThread(activeThread, target?._tag === "Connect");
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the space panel in the right-panel store the first time each thread shows
   useEffect(() => {
     if (ref === null) return;
     const key = scopedThreadKey(ref);
@@ -176,9 +172,7 @@ function SpaceContent({
 
   const handleNewThread = useNewThreadHandler();
   const orchestratorTarget = useSpaceThreadTarget(orchestrator);
-  const orchestratorShell = useThreadShell(
-    useMemo(() => savedThreadRef(orchestratorTarget), [orchestratorTarget]),
-  );
+  const orchestratorShell = useThreadShell(savedThreadRef(orchestratorTarget));
   // New agents start in the project of the thread on screen, else the orchestrator's.
   const projectShell = shell ?? orchestratorShell;
   const newAgentProject =
@@ -232,6 +226,7 @@ function useConnectSpaceThread(thread: TrevizeApi.TrevizeThread | null, needed: 
   const connect = useAtomCommand(Trevize.openTask, { reportFailure: false });
   const attempted = useRef(new Set<string>());
   const [error, setError] = useState<{ threadId: string; message: string } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks Trevize to connect the thread's environment once when this device lacks it
   useEffect(() => {
     if (!needed || thread === null || attempted.current.has(thread.id)) return;
     attempted.current.add(thread.id);
@@ -301,7 +296,7 @@ function SpaceThreadPending(props: {
 }
 
 const TAB_CLASS =
-  "flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 const tabTone = (active: boolean) =>
   active
     ? "bg-accent text-foreground"

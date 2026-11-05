@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 import {
   isAtomCommandInterrupted,
@@ -23,30 +23,27 @@ export function useOpenMyTask() {
   const navigate = useNavigate();
   const run = useAtomCommand(Trevize.openTask, { reportFailure: false });
   const [openingTaskId, setOpeningTaskId] = useState<string | null>(null);
-  const open = useCallback(
-    async (task: Pick<MyTask, "id" | "environmentId" | "runtimeThreadId">) => {
-      setOpeningTaskId(task.id);
-      const result = await run(task);
-      setOpeningTaskId((current) => (current === task.id ? null : current));
-      if (result._tag === "Success") {
-        await navigate({
-          to: "/$environmentId/$threadId",
-          params: {
-            environmentId: result.value.environmentId,
-            threadId: result.value.threadId,
-          },
-        });
-        return;
-      }
-      if (isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      toastManager.add({
-        type: "error",
-        title: "Could not open task",
-        description: error instanceof Error ? error.message : "Trevize could not open it.",
+  const open = async (task: Pick<MyTask, "id" | "environmentId" | "runtimeThreadId">) => {
+    setOpeningTaskId(task.id);
+    const result = await run(task);
+    setOpeningTaskId((current) => (current === task.id ? null : current));
+    if (result._tag === "Success") {
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: result.value.environmentId,
+          threadId: result.value.threadId,
+        },
       });
-    },
-    [navigate, run],
-  );
+      return;
+    }
+    if (isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    toastManager.add({
+      type: "error",
+      title: "Could not open task",
+      description: error instanceof Error ? error.message : "Trevize could not open it.",
+    });
+  };
   return { open, openingTaskId };
 }
