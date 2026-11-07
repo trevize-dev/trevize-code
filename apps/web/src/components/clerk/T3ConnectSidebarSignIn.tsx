@@ -1,9 +1,9 @@
-import { UserButton, useAuth } from "@clerk/react";
-import { LogInIcon } from "lucide-react";
+import { CircleUserIcon, LogInIcon } from "lucide-react";
 
+import { useAuth } from "~/cloud/trevizeAccount"; // Trevize: Trevize sign-in, not Clerk
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
-import { T3_CONNECT_ACCOUNT_PAGES } from "./T3ConnectAccountPages";
+import { useT3ConnectAccountPage } from "./T3ConnectAccountPages";
 import { useT3ConnectAuthPrompt } from "./useT3ConnectAuthPrompt";
 
 export function T3ConnectSidebarSignIn() {
@@ -18,32 +18,24 @@ export function T3ConnectSidebarAvatar() {
   return <ConfiguredT3ConnectSidebarAvatar />;
 }
 
+// Trevize: Clerk's UserButton is replaced by a button that opens the account pages.
 function ConfiguredT3ConnectSidebarAvatar() {
   const { isLoaded, isSignedIn } = useAuth();
+  const accountPage = useT3ConnectAccountPage();
 
-  if (!isLoaded || !isSignedIn) return null;
+  if (!isLoaded || !isSignedIn || !accountPage.open) return null;
+  const openAccountPage = accountPage.open;
 
   return (
-    <UserButton
-      appearance={{
-        elements: {
-          avatarBox: "size-7",
-          // Clerk's unlayered trigger reset (padding, radius, background) beats layered utilities.
-          userButtonTrigger: "mb-1! rounded-lg! p-1! hover:bg-sidebar-row-hover!",
-        },
-      }}
-    >
-      {T3_CONNECT_ACCOUNT_PAGES.map((page) => (
-        <UserButton.UserProfilePage
-          key={page.url}
-          label={page.label}
-          labelIcon={page.icon}
-          url={page.url}
-        >
-          {page.content}
-        </UserButton.UserProfilePage>
-      ))}
-    </UserButton>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton onClick={() => openAccountPage()}>
+          <CircleUserIcon />
+          <span>T3 Connect</span>
+        </SidebarMenuButton>
+        {accountPage.portals}
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 

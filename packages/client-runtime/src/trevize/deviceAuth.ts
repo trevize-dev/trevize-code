@@ -1,8 +1,10 @@
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import * as Schema from "effect/Schema";
+import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
 
 import { normalizeTrevizeBaseUrl, TrevizeApiError } from "./api.ts";
 
@@ -211,3 +213,56 @@ export const revokeTrevizeSession = Effect.fn("clientRuntime.trevize.revokeSessi
     )
     .pipe(Effect.provideService(HttpClient.TracerPropagationEnabled, false), Effect.ignore);
 });
+
+const RelayTokenResponse = Schema.Struct({ token: Schema.String });
+
+/**
+ * Exchanges a Trevize session for the short-lived account JWT the Trevize relay
+ * (T3 Connect) accepts in place of a Clerk token. None when there is no session
+ * to exchange: API keys carry none, and an expired or revoked session answers 401.
+ */
+export const fetchTrevizeRelayToken = Effect.fn("clientRuntime.trevize.fetchRelayToken")(function* (
+  baseUrl: string,
+  sessionToken: string,
+) {
+  if (isTrevizeApiKey(sessionToken)) return Option.none<string>();
+  const client = yield* HttpClient.HttpClient;
+  const response = yield* client
+    .execute(
+      HttpClientRequest.get(authUrl(baseUrl, "/token")).pipe(
+        HttpClientRequest.bearerToken(sessionToken.trim()),
+        HttpClientRequest.acceptJson,
+      ),
+    )
+    .pipe(
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.mapError(
+        (cause) =>
+          new TrevizeApiError({
+            reason: "network",
+            message: `Could not reach Trevize: ${cause.message}`,
+          }),
+      ),
+    );
+  if (response.status === 401) return Option.none<string>();
+  const json = yield* response.json.pipe(Effect.orElseSucceed(() => null));
+  if (response.status !== 200) {
+    return yield* new TrevizeApiError({
+      reason: "request",
+      status: response.status,
+      message: `Trevize answered with HTTP ${response.status}.`,
+    });
+  }
+  const body = yield* decode(RelayTokenResponse, response.status)(json);
+  return Option.some(body.token);
+});
+
+/** The account a relay token belongs to (its `sub`), or null when it is not a JWT. */
+export function trevizeRelayTokenSubject(token: string): string | null {
+  try {
+    const subject = decodeRelayJwt(token).sub;
+    return subject ? subject : null;
+  } catch {
+    return null;
+  }
+}

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useAuth } from "@clerk/react";
+import { useAuth } from "~/cloud/trevizeAccount"; // Trevize: Trevize sign-in, not Clerk
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
 import {
   EnvironmentId,
@@ -29,7 +29,6 @@ import {
   updatePrimaryEnvironmentPreferences as updatePrimaryEnvironmentPreferencesAtom,
 } from "./linkEnvironmentAtoms";
 import { readCachedPrimaryCloudLinkState, usePrimaryCloudLinkState } from "./primaryCloudLinkState";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
 
 export interface CloudLinkDesiredState {
   readonly managedTunnel: boolean;
@@ -146,7 +145,8 @@ export function useCloudLinkController() {
     if (!canManageLink()) return false;
     const wantsLink = desired.managedTunnel || desired.publish;
     if (wantsLink && readLinkState() === null) return false;
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
+    // Trevize: the Trevize relay token needs no Clerk JWT template.
+    const tokenResult = await settlePromise(() => getToken());
     if (!canManageLink()) return false;
 
     // A failed mutation may have partially applied, so refresh server state on every exit.

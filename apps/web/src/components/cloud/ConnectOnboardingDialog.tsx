@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useAuth } from "~/cloud/trevizeAccount"; // Trevize: Trevize sign-in, not Clerk
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthRelayReadScope,

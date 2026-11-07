@@ -4,10 +4,14 @@ import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 
 import { layerRemoteHttpClient } from "../rpc/http.ts";
+import * as Option from "effect/Option";
+
 import {
   awaitTrevizeDeviceSignIn,
+  fetchTrevizeRelayToken,
   revokeTrevizeSession,
   startTrevizeDeviceSignIn,
+  trevizeRelayTokenSubject,
   type TrevizeDeviceSignIn,
 } from "./deviceAuth.ts";
 
@@ -174,4 +178,60 @@ describe("revokeTrevizeSession", () => {
       );
     }),
   );
+});
+
+// A JWT with `sub: "user_123"`; the relay verifies the signature, the client only reads the subject.
+const relayJwt = [
+  btoa(JSON.stringify({ alg: "EdDSA" })),
+  btoa(JSON.stringify({ sub: "user_123", exp: 2_000_000_000 })).replace(/=+$/, ""),
+  "signature",
+].join(".");
+
+describe("fetchTrevizeRelayToken", () => {
+  it.effect("exchanges a session for a relay token", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const token = yield* fetchTrevizeRelayToken("trevize.example.test/", "session-token").pipe(
+        Effect.provide(layerHttp(calls, [() => Response.json({ token: relayJwt })])),
+      );
+      expect(calls.map((call) => [call.url, call.authorization])).toEqual([
+        ["https://trevize.example.test/api/auth/token", "Bearer session-token"],
+      ]);
+      expect(Option.getOrNull(token)).toBe(relayJwt);
+      expect(trevizeRelayTokenSubject(relayJwt)).toBe("user_123");
+    }),
+  );
+
+  it.effect("has no token for API keys or an ended session", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const apiKey = yield* fetchTrevizeRelayToken("https://trevize.example.test", "tvz_key").pipe(
+        Effect.provide(layerHttp(calls, [])),
+      );
+      const expired = yield* fetchTrevizeRelayToken(
+        "https://trevize.example.test",
+        "session-token",
+      ).pipe(Effect.provide(layerHttp(calls, [() => new Response(null, { status: 401 })])));
+      expect(Option.isNone(apiKey)).toBe(true);
+      expect(Option.isNone(expired)).toBe(true);
+      expect(calls).toHaveLength(1);
+    }),
+  );
+
+  it.effect("fails when Trevize cannot issue one", () =>
+    Effect.gen(function* () {
+      const error = yield* fetchTrevizeRelayToken(
+        "https://trevize.example.test",
+        "session-token",
+      ).pipe(
+        Effect.provide(layerHttp([], [() => new Response(null, { status: 404 })])),
+        Effect.flip,
+      );
+      expect(error.status).toBe(404);
+    }),
+  );
+
+  it("reads no subject from something that is not a JWT", () => {
+    expect(trevizeRelayTokenSubject("not-a-jwt")).toBeNull();
+  });
 });

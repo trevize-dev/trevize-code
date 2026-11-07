@@ -18,7 +18,7 @@ export function defaultTrevizeSettings(): TrevizeSync.TrevizeClientSettings {
   return TrevizeSync.defaultTrevizeClientSettings(defaultTrevizeBaseUrl());
 }
 
-function readSettings(): TrevizeSync.TrevizeClientSettings {
+export function readStoredTrevizeSettings(): TrevizeSync.TrevizeClientSettings {
   try {
     return (
       getLocalStorageItem(TREVIZE_SETTINGS_STORAGE_KEY, TrevizeSync.TrevizeClientSettings) ??
@@ -36,7 +36,7 @@ export function updateStoredTrevizeSettings(
   try {
     setLocalStorageItem(
       TREVIZE_SETTINGS_STORAGE_KEY,
-      f(readSettings()),
+      f(readStoredTrevizeSettings()),
       TrevizeSync.TrevizeClientSettings,
     );
     dispatchLocalStorageChange(TREVIZE_SETTINGS_STORAGE_KEY);
@@ -52,7 +52,7 @@ export function updateStoredTrevizeSettings(
 export const layerTrevizeSettingsStore = Layer.succeed(
   TrevizeSync.TrevizeSettingsStore,
   TrevizeSync.TrevizeSettingsStore.of({
-    get: Effect.sync(readSettings),
+    get: Effect.sync(readStoredTrevizeSettings),
     update: Effect.fn("TrevizeSettingsStore.update")((f) =>
       Effect.sync(() => updateStoredTrevizeSettings(f)),
     ),

@@ -1,12 +1,13 @@
-import { useClerk } from "@clerk/react";
+import { useNavigate } from "@tanstack/react-router";
 
-import { isElectron } from "../../env";
-import { resolveClerkSignInProps } from "./authRedirect";
-
+/**
+ * Trevize: T3 Connect signs in with the Trevize account, so the prompt opens the
+ * Trevize sign-in in Settings → Connections instead of Clerk's sign-in modal.
+ */
 export function useT3ConnectAuthPrompt() {
-  const clerk = useClerk();
+  const navigate = useNavigate();
   const openAuthPrompt = () => {
-    clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron));
+    void navigate({ to: "/settings/connections" });
   };
   return { openAuthPrompt };
 }

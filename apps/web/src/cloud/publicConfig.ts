@@ -78,6 +78,9 @@ export function resolveRelayTracingConfig() {
 
 export function hasCloudPublicConfig(): boolean {
   const config = resolveCloudPublicConfig();
+  // Trevize: T3 Connect signs in with a Trevize account, so the relay URL is enough
+  // (Clerk rules apply only when a Clerk key is configured, as in upstream's tests).
+  if (config.relayUrl && !config.clerkPublishableKey) return true;
   if (!config.clerkPublishableKey || !config.clerkJwtTemplate || !config.relayUrl) {
     return false;
   }
