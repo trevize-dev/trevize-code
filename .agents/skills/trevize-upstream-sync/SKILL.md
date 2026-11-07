@@ -95,6 +95,19 @@ Pattern by pattern, the conflicts we have seen:
   `http/Api.ts`. On conflict, keep the hooks (Neon providers, `NeonDb.RelayHyperdrive`,
   `accountAuth`, optional `CLERK_*`) and take upstream's code around them. If upstream
   changes `db.ts`'s Drizzle schema or migrations setup, mirror it in `neonDb.ts`.
+- **T3 Connect sign-in (clients).** T3 Connect signs in with the Trevize account, not
+  Clerk. The account lives in `client-runtime/src/trevize/account.ts`, wrapped by
+  `apps/web/src/cloud/trevizeAccount.ts` and `apps/mobile/src/features/cloud/trevizeAccount.ts`,
+  which export a `useAuth` with Clerk's shape. Upstream files that read Clerk only swap
+  their import to that module (marked `// Trevize:`). When upstream adds a new
+  `useAuth`/`getToken` caller, point it at the Trevize module, and drop Clerk template
+  options (`resolveRelayClerkTokenOptions`) from `getToken` calls. Clerk-only UI
+  (`clerk.openSignIn`, `UserButton`, `openUserProfile`, native `AuthView`) has Trevize
+  replacements in `useT3ConnectAuthPrompt`, `T3ConnectSidebarSignIn`,
+  `T3ConnectAccountPages` and mobile `SettingsAuthRouteScreen`; keep ours. The
+  `t3 connect` CLI uses Clerk only when a Clerk key is configured
+  (`cloudCliOAuthConfig` in `apps/server/src/cloud/publicConfig.ts`), otherwise the
+  Trevize device flow in `CliTokenManager.ts`.
 - **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
   ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 
