@@ -88,6 +88,13 @@ Pattern by pattern, the conflicts we have seen:
   Only use it where that is the intent (`routeTree.gen.ts`). To take upstream's side of one
   hunk, edit the markers; `git checkout -m <file>` recreates them if you went too far. In
   v0.1.7 this silently dropped our desktop branding, which the identity tests caught.
+- **Relay (`infra/relay`).** Trevize runs its own relay on Neon with Better Auth sign-in.
+  Upstream's Clerk and PlanetScale code stays in place, unused, so their changes merge
+  cleanly. Our side lives in `src/neonDb.ts` and `src/auth/AccountTokens.ts`, plus small
+  hooks marked `// Trevize:` in `alchemy.run.ts`, `worker.ts`, `Config.ts` and
+  `http/Api.ts`. On conflict, keep the hooks (Neon providers, `NeonDb.RelayHyperdrive`,
+  `accountAuth`, optional `CLERK_*`) and take upstream's code around them. If upstream
+  changes `db.ts`'s Drizzle schema or migrations setup, mirror it in `neonDb.ts`.
 - **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
   ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 

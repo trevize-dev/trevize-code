@@ -33,6 +33,7 @@ import * as Observability from "./observability.ts";
 import * as DeliveryAttempts from "./agentActivity/DeliveryAttempts.ts";
 import * as AgentActivityRows from "./agentActivity/AgentActivityRows.ts";
 import * as Devices from "./agentActivity/Devices.ts";
+import * as AccountTokens from "./auth/AccountTokens.ts";
 import * as DpopProofs from "./auth/DpopProofs.ts";
 import * as RelayTokens from "./auth/RelayTokens.ts";
 import * as EnvironmentCredentials from "./environments/EnvironmentCredentials.ts";
@@ -40,6 +41,7 @@ import * as EnvironmentLinks from "./environments/EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./environments/ManagedEndpointAllocations.ts";
 import * as LiveActivities from "./agentActivity/LiveActivities.ts";
 import * as RelayDb from "./db.ts";
+import * as NeonDb from "./neonDb.ts";
 import {
   RelayApnsDeliveryDeadLetterQueue,
   RelayApnsDeliveryQueue,
@@ -154,9 +156,17 @@ export const layer = Api.make(
     const apnsDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(apnsDeliveryQueue);
     const fcmDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(fcmDeliveryQueue);
 
-    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY");
-    const clerkPublishableKey = yield* Config.String("CLERK_PUBLISHABLE_KEY");
-    const clerkJwtAudience = yield* Config.String("CLERK_JWT_AUDIENCE");
+    // Trevize: clients sign in with Trevize (Better Auth), so Clerk is optional.
+    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY").pipe(
+      Config.withDefault(Redacted.make("")),
+    );
+    const clerkPublishableKey = yield* Config.String("CLERK_PUBLISHABLE_KEY").pipe(
+      Config.withDefault(""),
+    );
+    const clerkJwtAudience = yield* Config.String("CLERK_JWT_AUDIENCE").pipe(
+      Config.withDefault(""),
+    );
+    const accountAuth = AccountTokens.accountAuthSettings(yield* Config.String("TREVIZE_AUTH_URL"));
     const t3ChatLinkSecret = Option.getOrUndefined(
       Option.filter(
         yield* Config.option(Config.Redacted("T3CHAT_LINK_SECRET")),
@@ -169,7 +179,8 @@ export const layer = Api.make(
 
     const cloudMintPrivateKey = yield* cloudMintKeyPair.privateKey;
     const cloudMintPublicKey = yield* cloudMintKeyPair.publicKey;
-    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(yield* RelayDb.RelayHyperdrive);
+    // Trevize: Neon instead of PlanetScale; see neonDb.ts.
+    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(yield* NeonDb.RelayHyperdrive);
     // Named statements collide behind Hyperdrive transaction pooling (Effect-TS/effect#8320); use unnamed statements.
     const db = yield* Drizzle.Postgres(hyperdrive.connectionString, {
       client: { prepare: false },
@@ -229,6 +240,7 @@ export const layer = Api.make(
         clerkSecretKey,
         clerkPublishableKey,
         clerkJwtAudience,
+        accountAuth,
         cloudMintPrivateKey: yield* cloudMintPrivateKey,
         cloudMintPublicKey: yield* cloudMintPublicKey,
         managedEndpointBaseDomain: yield* managedEndpointZoneName,
