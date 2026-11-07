@@ -16,6 +16,7 @@ import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { TREVIZE_CLI_NPM_PACKAGE } from "@t3tools/shared/trevizeDistribution";
 
 const Version = Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/));
 const Manifest = Schema.Struct({ version: Version, t3code: Schema.optionalKey(Schema.Unknown) });
@@ -63,7 +64,9 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
       reason: "npm is not installed and the public npm registry could not be reached.",
     });
     const json = yield* Effect.gen(function* () {
-      const response = yield* http.get(`https://registry.npmjs.org/t3/${spec}`);
+      const response = yield* http.get(
+        `https://registry.npmjs.org/${TREVIZE_CLI_NPM_PACKAGE}/${spec}`,
+      ); /* Trevize */
       if (response.status === 404) return Option.none<string>();
       if (response.status < 200 || response.status >= 300) return yield* unreachable;
       return Option.some(yield* response.text);

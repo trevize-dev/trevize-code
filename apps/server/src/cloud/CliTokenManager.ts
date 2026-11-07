@@ -416,11 +416,20 @@ export interface DeviceAuthorizationPrompt {
   readonly expiresIn: Duration.Duration;
 }
 
+// Trevize: Better Auth's device endpoints accept only JSON bodies (form bodies get 415).
+const deviceRequestBody = (
+  metadata: Pick<CloudCliOAuthConfig, "accountTokenEndpoint">,
+  params: Record<string, string>,
+) =>
+  metadata.accountTokenEndpoint === undefined
+    ? HttpClientRequest.bodyUrlParams(params)
+    : HttpClientRequest.bodyJsonUnsafe(params);
+
 const isTransportError = (error: unknown) =>
   HttpClientError.isHttpClientError(error) && error.reason._tag === "TransportError";
 
 const pollDeviceToken = Effect.fn("cloud.cli_token.poll_device_token")(function* (
-  metadata: Pick<CloudCliOAuthConfig, "tokenEndpoint" | "clientId">,
+  metadata: Pick<CloudCliOAuthConfig, "tokenEndpoint" | "clientId" | "accountTokenEndpoint">,
   deviceCode: string,
   initialInterval: Duration.Duration,
 ) {
@@ -434,7 +443,7 @@ const pollDeviceToken = Effect.fn("cloud.cli_token.poll_device_token")(function*
   while (true) {
     yield* Effect.sleep(interval);
     const response = yield* HttpClientRequest.post(metadata.tokenEndpoint).pipe(
-      HttpClientRequest.bodyUrlParams(params),
+      deviceRequestBody(metadata, params),
       httpClient.execute,
       Effect.asSome,
       Effect.catchIf(isTransportError, () => Effect.succeedNone),
@@ -472,7 +481,7 @@ export const deviceAuthorizationLogin = Effect.fn("cloud.cli_token.device_author
     const metadata = yield* cloudCliOAuthConfig;
     const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
     const authorization = yield* HttpClientRequest.post(metadata.deviceAuthorizationEndpoint).pipe(
-      HttpClientRequest.bodyUrlParams({
+      deviceRequestBody(metadata, {
         client_id: metadata.clientId,
         scope: metadata.scopes.join(" "),
       }),

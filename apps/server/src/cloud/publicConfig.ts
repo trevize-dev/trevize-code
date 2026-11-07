@@ -236,9 +236,8 @@ function makeTrevizeCliOAuthConfig() {
 
 // Clerk only when a Clerk key is configured (upstream's tests and builds); Trevize
 // builds set none, so the CLI signs in with Trevize.
-export const cloudCliOAuthConfig = makeCloudCliOAuthConfig().pipe(
-  Config.orElse(() => makeTrevizeCliOAuthConfig()),
-);
+export const cloudCliOAuthConfig: Config.Config<CloudCliOAuthConfig> =
+  makeCloudCliOAuthConfig().pipe(Config.orElse(() => makeTrevizeCliOAuthConfig()));
 
 // Trevize: no Clerk keys needed, so a relay URL is enough to enable T3 Connect.
 export const hasCloudPublicConfig = Boolean(

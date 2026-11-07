@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 // Share the installer's runtime cache; pre-0.0.41 services re-enter here over IPC.
+// Trevize: published as `@trevize/code` (command `trevize-code`). It downloads Trevize's
+// own release from trevize-dev/trevize-code (tags `trevize-vX.Y.Z`) into `~/.trevize`;
+// keep these in step with packages/shared/src/trevizeDistribution.ts.
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -14,7 +17,7 @@ const SUPPORTED = ["darwin-arm64", "linux-arm64", "linux-x64", "win32-arm64", "w
 
 function t3Home() {
   const raw = (process.env.T3CODE_HOME || "").trim();
-  if (raw === "") return path.join(os.homedir(), ".t3");
+  if (raw === "") return path.join(os.homedir(), ".trevize");
   if (raw === "~") return os.homedir();
   if (raw.startsWith("~/") || raw.startsWith("~\\")) return path.join(os.homedir(), raw.slice(2));
   return path.resolve(raw);
@@ -50,7 +53,7 @@ async function download(url, file) {
         shown = step;
         const percent = total ? ` ${step}%` : "";
         process.stderr.write(
-          `\r\x1b[2Kt3: downloading T3 Code ${version}${percent} (${(received / 1048576).toFixed(1)} MB)`,
+          `\r\x1b[2Ktrevize-code: downloading Trevize Code ${version}${percent} (${(received / 1048576).toFixed(1)} MB)`,
         );
       }
     }
@@ -64,9 +67,10 @@ async function download(url, file) {
 async function install(dir, key) {
   const archive = `t3-${version}-${key}.${process.platform === "win32" ? "zip" : "tar.gz"}`;
   const base = (
-    process.env.T3CODE_RELEASE_BASE_URL || "https://github.com/pingdotgg/t3code/releases/download"
+    process.env.T3CODE_RELEASE_BASE_URL ||
+    "https://github.com/trevize-dev/trevize-code/releases/download"
   ).replace(/\/+$/, "");
-  const sums = await (await get(`${base}/v${version}/SHA256SUMS`)).text();
+  const sums = await (await get(`${base}/trevize-v${version}/SHA256SUMS`)).text();
   const expected = /^([0-9a-f]{64})\s+\*?(.+)$/im;
   const line = sums
     .split(/\r?\n/)
@@ -79,7 +83,9 @@ async function install(dir, key) {
   const staging = fs.mkdtempSync(`${dir}.staging-`);
   try {
     const file = path.join(staging, archive);
-    if ((await download(`${base}/v${version}/${archive}`, file)) !== line[1].toLowerCase()) {
+    if (
+      (await download(`${base}/trevize-v${version}/${archive}`, file)) !== line[1].toLowerCase()
+    ) {
       throw new Error(`checksum mismatch for ${archive}`);
     }
     // Windows' own tar.exe reads zip; a Git-for-Windows tar on PATH cannot.
@@ -138,7 +144,7 @@ function publish(staging, dir) {
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     throw new Error(
-      `another t3 is installing ${version}. If none is running, delete ${lock} and try again.`,
+      `another trevize-code is installing ${version}. If none is running, delete ${lock} and try again.`,
       { cause: error },
     );
   }
@@ -164,8 +170,8 @@ async function main() {
   const key = `${process.platform}-${process.arch}`;
   if (!SUPPORTED.includes(key)) {
     throw new Error(
-      `no T3 Code CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).\n` +
-        "The desktop app is at https://github.com/pingdotgg/t3code/releases",
+      `no Trevize Code CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).\n` +
+        "The desktop app is at https://github.com/trevize-dev/trevize-code/releases",
     );
   }
   const dir = path.join(t3Home(), "runtime", "versions", version);
@@ -179,7 +185,13 @@ async function main() {
     {
       stdio: ipc ? ["inherit", "inherit", "inherit", "ipc"] : "inherit",
       // The executable lives in the T3 home, so this is how it knows npm launched it.
-      env: { ...process.env, T3CODE_NPM_LAUNCHER_PATH: import.meta.filename },
+      // Trevize: the server keeps its data in the same home (`~/.trevize` by default), never
+      // in upstream T3 Code's `~/.t3`.
+      env: {
+        ...process.env,
+        T3CODE_HOME: t3Home(),
+        T3CODE_NPM_LAUNCHER_PATH: import.meta.filename,
+      },
     },
   );
   if (ipc) {
@@ -198,7 +210,7 @@ async function main() {
 
 function executableError(key, detail) {
   return new Error(
-    `could not run T3 Code ${version} for ${key}: ${detail}` +
+    `could not run Trevize Code ${version} for ${key}: ${detail}` +
       (process.platform === "linux"
         ? "\nThe Linux release requires glibc; musl-based systems such as Alpine are not supported. Use a glibc-based Linux environment."
         : ""),
@@ -206,7 +218,7 @@ function executableError(key, detail) {
 }
 
 function fail(error) {
-  process.stderr.write(`t3: ${error.message}\n`);
+  process.stderr.write(`trevize-code: ${error.message}\n`);
   process.exit(1);
 }
 

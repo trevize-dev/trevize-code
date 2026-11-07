@@ -13,11 +13,13 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
+import { TREVIZE_CLI_COMMAND, TREVIZE_CLI_NPM_PACKAGE } from "@t3tools/shared/trevizeDistribution";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { windowsSystemTar } from "./lib/windows-tar.ts";
 
-export const NPM_LAUNCHER_PACKAGE_NAME = "t3";
+// Trevize: our own launcher package and command; see packages/shared/src/trevizeDistribution.ts.
+export const NPM_LAUNCHER_PACKAGE_NAME = TREVIZE_CLI_NPM_PACKAGE;
 
 const encodePackageJson = Schema.encodeEffect(fromJsonStringPretty(Schema.Unknown));
 
@@ -36,10 +38,15 @@ export function npmLauncherPackageManifest(version: string, databaseMigration: n
     name: NPM_LAUNCHER_PACKAGE_NAME,
     version,
     description:
-      "T3 Code CLI. Downloads the self-contained executable for this platform from the GitHub Release.",
+      "Trevize Code CLI. Downloads the self-contained executable for this platform from the GitHub Release.",
     license: serverPackageJson.license,
-    repository: serverPackageJson.repository,
-    bin: { t3: "./bin/t3.mjs" },
+    // Trevize: the fork that publishes this package.
+    repository: {
+      type: "git",
+      url: "https://github.com/trevize-dev/trevize-code",
+      directory: "apps/server",
+    },
+    bin: { [TREVIZE_CLI_COMMAND]: "./bin/t3.mjs" },
     files: ["bin", "dist"],
     engines: { node: ">=20.11" },
     t3code: { databaseMigration },
@@ -91,8 +98,10 @@ export const buildNpmLauncher = Effect.fn("buildNpmLauncher")(function* (input: 
     yield* fs.copyFile(readme, path.join(stageDir, "README.md"));
   }
 
-  const packageDir = path.join(input.outputDir, NPM_LAUNCHER_PACKAGE_NAME);
-  const tarball = path.join(input.outputDir, `${NPM_LAUNCHER_PACKAGE_NAME}.tgz`);
+  // A scoped name is not a file name: `@trevize/code` stages as `trevize-code`.
+  const fileStem = NPM_LAUNCHER_PACKAGE_NAME.replace(/^@/, "").replace("/", "-");
+  const packageDir = path.join(input.outputDir, fileStem);
+  const tarball = path.join(input.outputDir, `${fileStem}.tgz`);
   yield* fs.remove(tarball, { force: true });
   const tar = (yield* HostProcess.Platform) === "win32" ? windowsSystemTar() : "tar";
   // npm tarballs root everything under `package/`.
