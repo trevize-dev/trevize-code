@@ -1,4 +1,3 @@
-import type { getClerkInstance } from "@clerk/expo";
 import {
   createCloudAccountService,
   ManagedRelay,
@@ -25,9 +24,10 @@ import {
 } from "../agent-awareness/remoteRegistration";
 import { removeCloudEnvironments } from "./cloud-drafts";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
+// Trevize: the account comes from Trevize sign-in, not Clerk; see trevizeAccount.ts.
+import type { TrevizeAccountSource } from "./trevizeAccount";
 
-type ClerkInstance = ReturnType<typeof getClerkInstance>;
+type ClerkInstance = TrevizeAccountSource;
 
 export function deactivateCloudRelayAccount(): void {
   setAgentAwarenessRelayTokenProvider(null);
@@ -46,8 +46,7 @@ export function activateCloudRelayAccount(
 }
 
 function clerkTokenReader(clerk: ClerkInstance): () => Promise<string | null> {
-  return async () =>
-    clerk.session ? await clerk.session.getToken(resolveRelayClerkTokenOptions()) : null;
+  return clerk.readRelayToken;
 }
 
 const cleanUpCloudAccount = async (

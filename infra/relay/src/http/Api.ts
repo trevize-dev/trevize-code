@@ -62,6 +62,7 @@ import {
 import * as DeliveryAttempts from "../agentActivity/DeliveryAttempts.ts";
 import * as AgentActivityRows from "../agentActivity/AgentActivityRows.ts";
 import * as Devices from "../agentActivity/Devices.ts";
+import { verifyAccountToken } from "../auth/AccountTokens.ts";
 import * as DpopProofs from "../auth/DpopProofs.ts";
 import * as RelayTokens from "../auth/RelayTokens.ts";
 import * as EnvironmentCredentials from "../environments/EnvironmentCredentials.ts";
@@ -1067,7 +1068,7 @@ export const layerTokenApi = HttpApiBuilder.group(
         const verified = yield* verifyClerkBearerToken(config, args.payload.subject_token).pipe(
           Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
         );
-        if (!verified.sub || !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)) {
+        if (!verified.sub || !hasExpectedClerkAudience(verified.aud, relayJwtAudience(config))) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
         const proofKeyThumbprint = yield* requireDpopProof().pipe(
@@ -1681,16 +1682,23 @@ function hasExpectedClerkAudience(audience: unknown, expectedAudience: string): 
         audience.some((entry) => typeof entry === "string" && entry === expectedAudience);
 }
 
+function relayJwtAudience(config: RelayConfiguration.RelayConfiguration["Service"]): string {
+  return config.accountAuth?.audience ?? config.clerkJwtAudience;
+}
+
 function verifyClerkBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
 ) {
   return Effect.tryPromise({
     try: () =>
-      verifyToken(token, {
-        secretKey: Redacted.value(config.clerkSecretKey),
-        audience: config.clerkJwtAudience,
-      }),
+      // Trevize: account JWTs come from Better Auth when configured.
+      config.accountAuth
+        ? verifyAccountToken(config.accountAuth, token)
+        : verifyToken(token, {
+            secretKey: Redacted.value(config.clerkSecretKey),
+            audience: config.clerkJwtAudience,
+          }),
     catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
   }).pipe(
     Effect.withSpan("verify_clerk_bearer_token", {
@@ -1705,6 +1713,9 @@ function verifyClerkOAuthBearerToken(
 ) {
   return Effect.tryPromise({
     try: async () => {
+      if (config.accountAuth) {
+        throw new Error("Clerk OAuth tokens are not accepted with Trevize account auth.");
+      }
       const client = createClerkClient({
         secretKey: Redacted.value(config.clerkSecretKey),
         publishableKey: config.clerkPublishableKey,
@@ -1731,7 +1742,7 @@ export function verifyRelayClientBearerToken(
 ) {
   return verifyClerkBearerToken(config, token).pipe(
     Effect.flatMap((verified) =>
-      verified.sub && hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)
+      verified.sub && hasExpectedClerkAudience(verified.aud, relayJwtAudience(config))
         ? Effect.succeed({ sub: verified.sub, mode: "clerk_session_bearer" as const })
         : Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_relay_audience" })),
     ),

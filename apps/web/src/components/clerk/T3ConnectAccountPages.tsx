@@ -1,13 +1,16 @@
-import { useAuth, useClerk } from "@clerk/react";
+// Trevize: Clerk's profile modal hosted these pages. T3 Connect signs in with a
+// Trevize account, so they open in our own dialog instead.
 import { MessageSquareIcon, ServerIcon, SmartphoneIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { createPortal } from "react-dom";
 
+import { useAuth } from "~/cloud/trevizeAccount";
+import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
 import { T3ChatUserProfilePage } from "./T3ChatUserProfilePage";
 import { T3ConnectUserProfilePage } from "./T3ConnectUserProfilePage";
 
-export const T3_CONNECT_ACCOUNT_PAGES = [
+const T3_CONNECT_ACCOUNT_PAGES = [
   {
     label: "Mobile clients",
     url: "mobile-clients",
@@ -30,41 +33,52 @@ export const T3_CONNECT_ACCOUNT_PAGES = [
 
 export type T3ConnectAccountPageUrl = (typeof T3_CONNECT_ACCOUNT_PAGES)[number]["url"];
 
-type PortalTargets = Readonly<Record<string, HTMLDivElement | undefined>>;
-
-/** Keep portals rendered while the modal can open; Clerk owns the custom-page DOM nodes. */
+/** Opens the account pages in a dialog; render `portals` wherever the hook is used. */
 export function useT3ConnectAccountPage(): {
   readonly open: ((page?: T3ConnectAccountPageUrl) => void) | null;
   readonly portals: ReactNode;
 } {
-  const clerk = useClerk();
   const { isSignedIn } = useAuth();
-  const [targets, setTargets] = useState<PortalTargets>({});
+  const [page, setPage] = useState<T3ConnectAccountPageUrl | null>(null);
 
-  const open = (page: T3ConnectAccountPageUrl = "t3-connect") => {
-    const setTarget = (key: string, element: HTMLDivElement | undefined) =>
-      setTargets((current) => ({ ...current, [key]: element }));
-    clerk.openUserProfile({
-      __experimental_startPath: `/${page}`,
-      customPages: T3_CONNECT_ACCOUNT_PAGES.map((page) => ({
-        label: page.label,
-        url: page.url,
-        mount: (element: HTMLDivElement) => setTarget(`content:${page.url}`, element),
-        unmount: () => setTarget(`content:${page.url}`, undefined),
-        mountIcon: (element: HTMLDivElement) => setTarget(`icon:${page.url}`, element),
-        unmountIcon: () => setTarget(`icon:${page.url}`, undefined),
-      })),
-    });
-  };
+  const open = (next: T3ConnectAccountPageUrl = "t3-connect") => setPage(next);
 
-  const portals = T3_CONNECT_ACCOUNT_PAGES.flatMap((page) => {
-    const content = targets[`content:${page.url}`];
-    const icon = targets[`icon:${page.url}`];
-    return [
-      content ? createPortal(page.content, content, `content:${page.url}`) : null,
-      icon ? createPortal(page.icon, icon, `icon:${page.url}`) : null,
-    ];
-  });
+  const current = T3_CONNECT_ACCOUNT_PAGES.find((entry) => entry.url === page);
+  const portals = current ? (
+    <Dialog
+      open
+      onOpenChange={(isOpen) => {
+        if (!isOpen) setPage(null);
+      }}
+    >
+      <DialogPopup className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>T3 Connect</DialogTitle>
+        </DialogHeader>
+        <DialogPanel>
+          <div className="flex flex-col gap-4">
+            <ToggleGroup
+              aria-label="Account page"
+              className="w-full *:flex-1"
+              value={[current.url]}
+              onValueChange={(next) => {
+                const selected = T3_CONNECT_ACCOUNT_PAGES.find((entry) => entry.url === next[0]);
+                if (selected) setPage(selected.url);
+              }}
+            >
+              {T3_CONNECT_ACCOUNT_PAGES.map((entry) => (
+                <Toggle key={entry.url} value={entry.url}>
+                  {entry.icon}
+                  {entry.label}
+                </Toggle>
+              ))}
+            </ToggleGroup>
+            {current.content}
+          </div>
+        </DialogPanel>
+      </DialogPopup>
+    </Dialog>
+  ) : null;
 
   return { open: isSignedIn ? open : null, portals };
 }

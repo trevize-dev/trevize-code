@@ -155,7 +155,12 @@ export interface CloudCliOAuthConfig {
   readonly clientId: string;
   readonly loopbackPort: number;
   readonly redirectUri: string;
-  readonly scopes: typeof CLOUD_CLI_OAUTH_SCOPES;
+  readonly scopes: ReadonlyArray<string>;
+  /**
+   * Trevize: where a Trevize session is exchanged for a relay JWT. When set, the
+   * CLI signs in with the Trevize device flow and the refresh token is the session.
+   */
+  readonly accountTokenEndpoint?: string;
 }
 
 export function makeCloudCliOAuthConfig({
@@ -202,10 +207,40 @@ export function makeCloudCliOAuthConfig({
   );
 }
 
-export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
+// Trevize: T3 Connect signs in with a Trevize account (Better Auth device flow)
+// instead of Clerk. The client id and scopes are the ones Trevize trusts.
+const TREVIZE_DEFAULT_URL = "https://app.trevize.dev";
+const TREVIZE_CLI_CLIENT_ID = "trevize-code";
+const TREVIZE_CLI_SCOPES = ["profile", "api"] as const;
 
+const trevizeUrlConfig = makePublicValueConfig("T3CODE_TREVIZE_URL", TREVIZE_DEFAULT_URL).pipe(
+  Config.mapEffect(validateHostedAppUrl),
+);
+
+function makeTrevizeCliOAuthConfig() {
+  return trevizeUrlConfig.pipe(
+    Config.map(
+      (trevizeUrl) =>
+        ({
+          tokenEndpoint: `${trevizeUrl}/api/auth/device/token`,
+          deviceAuthorizationEndpoint: `${trevizeUrl}/api/auth/device/code`,
+          accountTokenEndpoint: `${trevizeUrl}/api/auth/token`,
+          clientId: TREVIZE_CLI_CLIENT_ID,
+          loopbackPort: CLOUD_CLI_OAUTH_LOOPBACK_PORT,
+          redirectUri: connectLoopbackRedirectUri(CLOUD_CLI_OAUTH_LOOPBACK_PORT),
+          scopes: TREVIZE_CLI_SCOPES,
+        }) satisfies CloudCliOAuthConfig,
+    ),
+  );
+}
+
+// Clerk only when a Clerk key is configured (upstream's tests and builds); Trevize
+// builds set none, so the CLI signs in with Trevize.
+export const cloudCliOAuthConfig = makeCloudCliOAuthConfig().pipe(
+  Config.orElse(() => makeTrevizeCliOAuthConfig()),
+);
+
+// Trevize: no Clerk keys needed, so a relay URL is enough to enable T3 Connect.
 export const hasCloudPublicConfig = Boolean(
-  (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
-  (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
-  (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
+  normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl,
 );

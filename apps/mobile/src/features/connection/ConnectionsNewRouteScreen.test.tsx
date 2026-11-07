@@ -33,7 +33,10 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => ({ name: "ConnectionsNew" }),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
-vi.mock("@clerk/expo", () => ({ useAuth: () => ({ isLoaded: false, isSignedIn: false }) }));
+// Trevize: the screen reads the Trevize account instead of Clerk.
+vi.mock("../cloud/trevizeAccount", () => ({
+  useAuth: () => ({ isLoaded: false, isSignedIn: false }),
+}));
 vi.mock("expo-camera", () => ({
   CameraView: () => null,
   useCameraPermissions: () => [null, vi.fn()],

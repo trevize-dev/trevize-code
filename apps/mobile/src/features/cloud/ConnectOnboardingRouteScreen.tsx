@@ -4,7 +4,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
-import { useAuth } from "@clerk/expo";
+import { useAuth } from "./trevizeAccount"; // Trevize: Trevize sign-in, not Clerk
 import { useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, RefreshControl, View } from "react-native";

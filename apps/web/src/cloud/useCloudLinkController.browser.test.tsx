@@ -45,8 +45,8 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
     ),
   })) as never,
 }));
-vi.mock(import("@clerk/react"), async (original) => ({
-  ...(await original()),
+// Trevize: the controller reads the Trevize account instead of Clerk.
+vi.mock(import("./trevizeAccount"), async () => ({
   useAuth: (() => ({ getToken: testState.getToken, isSignedIn: true })) as never,
 }));
 vi.mock(import("../components/ui/toast"), async (original) => {

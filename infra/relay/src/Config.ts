@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import type { AccountTokenSettings } from "./auth/AccountTokens.ts";
+
 export const ApnsEnvironment = Schema.Literals(["sandbox", "production"]);
 export type ApnsEnvironment = typeof ApnsEnvironment.Type;
 
@@ -63,6 +65,8 @@ export class RelayConfiguration extends Context.Service<
     readonly clerkSecretKey: Redacted.Redacted<string>;
     readonly clerkPublishableKey: string;
     readonly clerkJwtAudience: string;
+    // Trevize: when set, clients authenticate with Trevize (Better Auth) account JWTs.
+    readonly accountAuth?: AccountTokenSettings;
     readonly apnsDeliveryJobSigningSecret: Redacted.Redacted<string>;
     readonly cloudMintPrivateKey: Redacted.Redacted<string>;
     readonly cloudMintPublicKey: string;

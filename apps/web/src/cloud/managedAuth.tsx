@@ -1,4 +1,3 @@
-import { useClerk } from "@clerk/react";
 import {
   createCloudAccountService,
   ManagedRelay,
@@ -15,7 +14,7 @@ import { useEffect, type ReactNode } from "react";
 import { environmentCatalog } from "../connection/catalog";
 import { runtime } from "../lib/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
+import { type TrevizeAccountSource, trevizeAccountSource } from "./trevizeAccount";
 
 export function deactivateManagedRelayAuthentication(): void {
   setManagedRelaySession(appAtomRegistry, null);
@@ -31,14 +30,8 @@ export function activateManagedRelayAuthentication(
   });
 }
 
-type ClerkInstance = ReturnType<typeof useClerk>;
-
-function clerkTokenReader(clerk: ClerkInstance): () => Promise<string | null> {
-  return async () =>
-    clerk.session ? await clerk.session.getToken(resolveRelayClerkTokenOptions()) : null;
-}
-
-const managedRelayAccountService = createCloudAccountService<ClerkInstance>({
+// Trevize: the account comes from Trevize sign-in, not Clerk; see trevizeAccount.ts.
+const managedRelayAccountService = createCloudAccountService<TrevizeAccountSource>({
   deactivate: deactivateManagedRelayAuthentication,
   detach: deactivateManagedRelayAuthentication,
   cleanUp: async () => {
@@ -58,14 +51,11 @@ const managedRelayAccountService = createCloudAccountService<ClerkInstance>({
     }
   },
   activate: ({ source, accountId }) =>
-    activateManagedRelayAuthentication(accountId, clerkTokenReader(source)),
+    activateManagedRelayAuthentication(accountId, source.readRelayToken),
 });
 
 export function ManagedRelayAuthProvider({ children }: { readonly children: ReactNode }) {
-  // ClerkProvider creates the Clerk instance and owns its lifetime, so the
-  // account service observes it for as long as this provider is mounted.
-  const clerk = useClerk();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches the Clerk instance to the managed relay account service for the provider's lifetime
-  useEffect(() => managedRelayAccountService.attach(clerk), [clerk]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches the Trevize account to the managed relay account service for the provider's lifetime
+  useEffect(() => managedRelayAccountService.attach(trevizeAccountSource), []);
   return children;
 }

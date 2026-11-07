@@ -8,8 +8,9 @@ import {
   deactivateManagedRelayAuthentication,
 } from "./managedAuth";
 
-vi.mock("@clerk/react", () => ({
-  useClerk: vi.fn(),
+// Trevize: managed auth observes the Trevize account instead of Clerk.
+vi.mock("./trevizeAccount", () => ({
+  trevizeAccountSource: {},
 }));
 
 vi.mock("../lib/runtime", () => ({

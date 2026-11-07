@@ -3,6 +3,7 @@ import {
   TrevizeApi,
   clearTrevizeApiKey,
   connectTrevizeEnvironment,
+  fetchTrevizeRelayToken,
   loadTrevizeApiKey,
   saveTrevizeApiKey,
   TrevizeSync,
@@ -20,7 +21,8 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
-import { updateStoredTrevizeSettings } from "./settingsStore";
+import { notifyTrevizeAccountChange } from "./accountEvents";
+import { readStoredTrevizeSettings, updateStoredTrevizeSettings } from "./settingsStore";
 
 export {
   TREVIZE_SETTINGS_STORAGE_KEY,
@@ -62,6 +64,21 @@ export const wakeEnvironment = createRuntimeCommand(connectionAtomRuntime, {
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.wake(environmentId))),
 });
 
+/** The short-lived T3 Connect relay token for the signed-in Trevize account, if any. */
+export const relayToken = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:relay-token",
+  execute: (_input: void) =>
+    loadTrevizeApiKey().pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed(Option.none<string>()),
+          onSome: (sessionToken) =>
+            fetchTrevizeRelayToken(readStoredTrevizeSettings().baseUrl, sessionToken),
+        }),
+      ),
+    ),
+});
+
 export const loadApiKey = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:load-api-key",
   execute: (_input: void) => loadTrevizeApiKey(),
@@ -71,6 +88,7 @@ export const loadApiKey = createRuntimeCommand(connectionAtomRuntime, {
 const signInWith = (config: TrevizeApi.TrevizeApiConfig) =>
   TrevizeApi.listWorkspaces(config).pipe(
     Effect.tap(() => saveTrevizeApiKey(config.apiKey)),
+    Effect.tap(() => Effect.sync(notifyTrevizeAccountChange)),
     // The first sync must already use the URL just signed in to.
     Effect.tap(() =>
       Effect.sync(() =>
@@ -120,6 +138,7 @@ export const signOut = createRuntimeCommand(connectionAtomRuntime, {
   execute: (config: TrevizeApi.TrevizeApiConfig) =>
     revokeTrevizeSession(config.baseUrl, config.apiKey).pipe(
       Effect.andThen(clearTrevizeApiKey()),
+      Effect.tap(() => Effect.sync(notifyTrevizeAccountChange)),
       Effect.tap(() => requestSync),
     ),
 });

@@ -27,6 +27,7 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { buildConnectAuthorizeRequestUrl } from "@t3tools/shared/connectAuth";
+import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
@@ -366,6 +367,37 @@ const exchangeToken = Effect.fn("cloud.cli_token.exchange")(function* (
   );
 });
 
+// Trevize: the relay accepts a short-lived Trevize account JWT, minted from the
+// Trevize session the device grant returns. The session is kept as the refresh
+// token, so a refresh mints a fresh JWT and the persisted shape stays the same.
+const TrevizeAccountTokenResponse = Schema.Struct({ token: Schema.String });
+
+const mintTrevizeAccountToken = Effect.fn("cloud.cli_token.mint_trevize_account_token")(function* (
+  accountTokenEndpoint: string,
+  sessionToken: string,
+  identity: string | undefined,
+) {
+  const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
+  const body = yield* HttpClientRequest.get(accountTokenEndpoint).pipe(
+    HttpClientRequest.bearerToken(sessionToken),
+    HttpClientRequest.acceptJson,
+    httpClient.execute,
+    Effect.flatMap(HttpClientResponse.schemaBodyJson(TrevizeAccountTokenResponse)),
+    Effect.timeout(OAUTH_REQUEST_TIMEOUT),
+    // A rejected session (e.g. 401) needs a new sign-in; see `requiresLogin`.
+    Effect.catchReason("HttpClientError", "StatusCodeError", (reason, cause) =>
+      Effect.fail(new CloudCliCredentialRefreshError({ cause, status: reason.response.status })),
+    ),
+  );
+  const expiresAtSeconds = decodeRelayJwt(body.token).exp ?? 0;
+  return {
+    accessToken: body.token,
+    refreshToken: sessionToken,
+    expiresAtEpochMs: expiresAtSeconds * 1_000,
+    ...(identity === undefined ? {} : { identity }),
+  } satisfies PersistedToken;
+});
+
 const makePkceRequest = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const digest = yield* Digest.Digest;
@@ -459,12 +491,22 @@ export const deviceAuthorizationLogin = Effect.fn("cloud.cli_token.device_author
       userCode: authorization.user_code,
       expiresIn,
     });
-    return yield* pollDeviceToken(metadata, authorization.device_code, interval).pipe(
+    const result = yield* pollDeviceToken(metadata, authorization.device_code, interval).pipe(
       Effect.timeout(expiresIn),
       Effect.catchTags({
         TimeoutError: (cause) => Effect.fail(new CloudCliAuthorizationTimeoutError({ cause })),
       }),
     );
+    // Trevize: the device grant returns a Trevize session; mint the relay token from it.
+    if (metadata.accountTokenEndpoint === undefined) return result;
+    return {
+      token: yield* mintTrevizeAccountToken(
+        metadata.accountTokenEndpoint,
+        result.token.accessToken,
+        result.token.identity,
+      ),
+      identity: result.identity,
+    };
   },
 );
 
@@ -499,6 +541,14 @@ export const make = Effect.gen(function* () {
 
   const refresh = Effect.fn("cloud.cli_token.refresh")(function* (token: PersistedToken) {
     const metadata = yield* cloudCliOAuthConfig;
+    // Trevize: the refresh token is the Trevize session; mint a fresh relay token.
+    if (metadata.accountTokenEndpoint !== undefined) {
+      return yield* mintTrevizeAccountToken(
+        metadata.accountTokenEndpoint,
+        token.refreshToken,
+        token.identity,
+      );
+    }
     const { token: refreshed } = yield* exchangeToken(metadata, {
       grant_type: "refresh_token",
       refresh_token: token.refreshToken,
@@ -575,6 +625,21 @@ export const make = Effect.gen(function* () {
     return { _tag: "Authorized", token } as const;
   });
 
+  // Trevize: Trevize has no loopback OAuth client, so interactive sign-in is the
+  // device flow with the approval page opened in the browser.
+  const trevizeLogin = Effect.fn("cloud.cli_token.trevize_login")(function* () {
+    const { token } = yield* deviceAuthorizationLogin((prompt) =>
+      Effect.gen(function* () {
+        const url = prompt.verificationUriComplete ?? prompt.verificationUri;
+        yield* Console.log(
+          `To sign in to T3 Connect, open ${url} and confirm the code ${boldTerminalText(prompt.userCode)}.`,
+        );
+        yield* externalLauncher.launchBrowser(url).pipe(Effect.ignore);
+      }),
+    );
+    return { _tag: "Authorized", token } as const;
+  });
+
   const getExistingNoLock = Effect.fn("cloud.cli_token.get_existing_no_lock")(function* () {
     const token = yield* read();
     if (Option.isNone(token)) return token;
@@ -619,7 +684,10 @@ export const make = Effect.gen(function* () {
       if (Option.isSome(token)) {
         return { _tag: "Authorized", token: token.value } as const;
       }
-      const authorization = yield* Effect.scoped(login());
+      const metadata = yield* cloudCliOAuthConfig;
+      const authorization = yield* metadata.accountTokenEndpoint === undefined
+        ? Effect.scoped(login())
+        : trevizeLogin();
       return authorization._tag === "Authorized"
         ? ({ _tag: "Authorized", token: yield* persist(authorization.token) } as const)
         : authorization;

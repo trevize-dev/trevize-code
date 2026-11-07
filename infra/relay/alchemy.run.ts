@@ -6,10 +6,10 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Drizzle from "@alchemy.run/drizzle";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Planetscale from "@alchemy.run/planetscale";
+import * as Neon from "@alchemy.run/neon";
 
 import { PublishClientConfig, tokenDigest } from "./src/clientConfig.ts";
-import * as RelayDb from "./src/db.ts";
+import * as RelayDb from "./src/neonDb.ts";
 import { MobileSourceMapsUploadCredentials, RelayObservability } from "./src/observability.ts";
 import { isPreviewStage } from "./src/previewStages.ts";
 import { PreviewTunnelSweep, PreviewTunnelSweepProvider } from "./src/previewTunnelSweep.ts";
@@ -23,14 +23,15 @@ export default Alchemy.Stack(
       Axiom.providers(),
       Cloudflare.providers(),
       Drizzle.providers(),
-      Planetscale.providers(),
+      Neon.providers(),
       PreviewTunnelSweepProvider(),
     ),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const db = yield* RelayDb.PlanetscaleDatabase;
+    // Trevize: Neon instead of PlanetScale; see src/neonDb.ts.
+    const db = yield* RelayDb.NeonDatabase;
     const hyperdrive = yield* RelayDb.RelayHyperdrive;
     const managedEndpointZone = yield* ManagedEndpointZone.pipe(Effect.orDie);
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
@@ -60,8 +61,8 @@ export default Alchemy.Stack(
     });
 
     return {
-      databaseName: db.database.name,
-      databaseBranchName: db.branch?.name ?? "main",
+      databaseName: db.project.projectName,
+      databaseBranchName: db.branch?.branchName ?? db.project.defaultBranchName,
       hyperdriveName: hyperdrive.name,
       workerName: api.workerName,
       url: api.url,

@@ -33,6 +33,7 @@ catalog:
   "@alchemy.run/axiom": 2.0.0-beta.85
   "@alchemy.run/cloudflare": 2.0.0-beta.85
   "@alchemy.run/drizzle": 2.0.0-beta.85
+  "@alchemy.run/neon": 2.0.0-beta.85
   "@alchemy.run/planetscale": 2.0.0-beta.85
   "@alchemy.run/test": 2.0.0-beta.85
   "@clerk/backend": 3.25.0
@@ -107,6 +108,7 @@ minimumReleaseAgeExclude:
   - "@alchemy.run/cloudflare-runtime@2.0.0-beta.85"
   - "@alchemy.run/docker@2.0.0-beta.85"
   - "@alchemy.run/drizzle@2.0.0-beta.85"
+  - "@alchemy.run/neon@2.0.0-beta.85"
   - "@alchemy.run/node-utils@2.0.0-beta.85"
   - "@alchemy.run/planetscale@2.0.0-beta.85"
   - "@alchemy.run/sql@2.0.0-beta.85"
