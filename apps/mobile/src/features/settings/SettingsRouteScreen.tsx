@@ -14,7 +14,7 @@ import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { useAuth, useUser } from "@clerk/expo";
+import { useAuth } from "../cloud/trevizeAccount"; // Trevize: Trevize sign-in, not Clerk
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
@@ -108,13 +108,8 @@ interface SettingsListSection {
 function ConfiguredSettingsRouteScreen() {
   const navigation = useNavigation();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const accountLabel = !isLoaded
-    ? "Checking"
-    : !isSignedIn
-      ? "Sign in"
-      : (user?.primaryEmailAddress?.emailAddress ?? "Signed in");
+  const accountLabel = !isLoaded ? "Checking" : !isSignedIn ? "Sign in" : "Signed in"; // Trevize: the relay token carries no profile
 
   return (
     <SettingsList

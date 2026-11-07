@@ -75,6 +75,9 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
 
 export function hasCloudPublicConfig(): boolean {
   const config = resolveCloudPublicConfig();
+  // Trevize: T3 Connect signs in with a Trevize account, so the relay URL is enough
+  // (Clerk is required only when a Clerk key is configured, as in upstream's tests).
+  if (config.relay.url && !config.clerk.publishableKey) return true;
   return Boolean(config.clerk.publishableKey && config.clerk.jwtTemplate && config.relay.url);
 }
 
