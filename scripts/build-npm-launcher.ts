@@ -98,8 +98,8 @@ export const buildNpmLauncher = Effect.fn("buildNpmLauncher")(function* (input: 
     yield* fs.copyFile(readme, path.join(stageDir, "README.md"));
   }
 
-  // A scoped name is not a file name: `@trevize/code` stages as `trevize-code`.
-  const fileStem = NPM_LAUNCHER_PACKAGE_NAME.replace(/^@/, "").replace("/", "-");
+  // A scoped name is not a file name: `@trevize-dev/code` stages under its command name.
+  const fileStem = TREVIZE_CLI_COMMAND;
   const packageDir = path.join(input.outputDir, fileStem);
   const tarball = path.join(input.outputDir, `${fileStem}.tgz`);
   yield* fs.remove(tarball, { force: true });

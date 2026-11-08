@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Share the installer's runtime cache; pre-0.0.41 services re-enter here over IPC.
-// Trevize: published as `@trevize/code` (command `trevize-code`). It downloads Trevize's
+// Trevize: published as `@trevize-dev/code` (command `trevize-code`). It downloads Trevize's
 // own release from trevize-dev/trevize-code (tags `trevize-vX.Y.Z`) into `~/.trevize`;
 // keep these in step with packages/shared/src/trevizeDistribution.ts.
 import { spawn, spawnSync } from "node:child_process";

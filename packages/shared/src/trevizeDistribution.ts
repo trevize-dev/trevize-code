@@ -7,7 +7,7 @@
 export const TREVIZE_CLI_RELEASE_REPOSITORY = "trevize-dev/trevize-code";
 /** Trevize release tags are `trevize-vX.Y.Z`; the repo also carries upstream's `v` tags. */
 export const TREVIZE_CLI_RELEASE_TAG_PREFIX = "trevize-v";
-/** The npm launcher package (`npx @trevize/code`, or `trevize code` from the Trevize CLI). */
-export const TREVIZE_CLI_NPM_PACKAGE = "@trevize/code";
+/** The npm launcher package (`npx @trevize-dev/code`, or `trevize code` from the Trevize CLI). */
+export const TREVIZE_CLI_NPM_PACKAGE = "@trevize-dev/code";
 /** The command the npm launcher package exposes. */
 export const TREVIZE_CLI_COMMAND = "trevize-code";
