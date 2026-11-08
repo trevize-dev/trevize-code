@@ -184,20 +184,21 @@ const publishCmd = Command.make(
       const path = yield* Path.Path;
       const fs = yield* FileSystem.FileSystem;
       const packagesDir = path.resolve(config.packagesDir);
-      // Trevize: build-npm-launcher.ts stages `@trevize-dev/code` as trevize-code.tgz.
-      const launcherTarball = path.join(packagesDir, "trevize-code.tgz");
-      if (!(yield* fs.exists(launcherTarball))) {
-        return yield* new ServerCliBuildAssetMissingError({ assetPath: launcherTarball });
+      // Trevize: build-npm-launcher.ts stages `@trevize-dev/code` in trevize-code/. pnpm packs
+      // it; the registry rejects the directory entries in build-npm-launcher's own tarball.
+      const launcherDir = path.join(packagesDir, "trevize-code");
+      if (!(yield* fs.exists(path.join(launcherDir, "package.json")))) {
+        return yield* new ServerCliBuildAssetMissingError({ assetPath: launcherDir });
       }
 
-      const args = ["publish", "--access", config.access, "--tag", config.tag];
+      const args = ["publish", "--access", config.access, "--tag", config.tag, "--no-git-checks"];
       if (config.provenance) args.push("--provenance");
       if (config.dryRun) args.push("--dry-run");
-      const spawnCommand = yield* resolveSpawnCommand("npm", [...args, launcherTarball]);
-      yield* Effect.log(`[cli] npm ${args.join(" ")} trevize-code.tgz`);
+      const spawnCommand = yield* resolveSpawnCommand("pnpm", args);
+      yield* Effect.log(`[cli] pnpm ${args.join(" ")} (${launcherDir})`);
       yield* runCommand(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          cwd: packagesDir,
+          cwd: launcherDir,
           stdout: config.verbose ? "inherit" : "ignore",
           stderr: "inherit",
           shell: spawnCommand.shell,
