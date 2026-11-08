@@ -120,7 +120,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const manifest = yield* decodeManifest(
           yield* fs.readFileString(path.join(output.packageDir, "package.json")),
         );
-        assert.equal(manifest.name, "@trevize/code"); // Trevize
+        assert.equal(manifest.name, "@trevize-dev/code"); // Trevize
         assert.equal(manifest.version, VERSION);
         assert.deepStrictEqual(manifest.bin, { "trevize-code": "./bin/t3.mjs" });
         assert.isUndefined(manifest.dependencies);

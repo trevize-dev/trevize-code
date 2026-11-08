@@ -184,7 +184,7 @@ const publishCmd = Command.make(
       const path = yield* Path.Path;
       const fs = yield* FileSystem.FileSystem;
       const packagesDir = path.resolve(config.packagesDir);
-      // Trevize: build-npm-launcher.ts stages `@trevize/code` as trevize-code.tgz.
+      // Trevize: build-npm-launcher.ts stages `@trevize-dev/code` as trevize-code.tgz.
       const launcherTarball = path.join(packagesDir, "trevize-code.tgz");
       if (!(yield* fs.exists(launcherTarball))) {
         return yield* new ServerCliBuildAssetMissingError({ assetPath: launcherTarball });
