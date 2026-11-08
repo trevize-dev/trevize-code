@@ -419,6 +419,10 @@
       "types": "./src/hostClassification.ts",
       "import": "./src/hostClassification.ts"
     },
+    "./trevizeDistribution": {
+      "types": "./src/trevizeDistribution.ts",
+      "import": "./src/trevizeDistribution.ts"
+    },
     "./cliRelease": {
       "types": "./src/cliRelease.ts",
       "import": "./src/cliRelease.ts"

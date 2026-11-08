@@ -47,11 +47,13 @@ const layerTrevize = (requests: Array<RecordedRequest>, replies: Record<string, 
       Effect.sync(() => {
         const body =
           request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+        // Better Auth rejects form bodies with 415, so the CLI must send JSON.
+        const json: unknown = body === "" ? {} : JSON.parse(body);
         requests.push({
           method: request.method,
           url: request.url,
           authorization: request.headers.authorization,
-          params: new URLSearchParams(body),
+          params: new URLSearchParams(json as Record<string, string>),
         });
         const path = new URL(request.url).pathname;
         const queue = replies[path] ?? [];
@@ -183,8 +185,8 @@ it.effect("asks to sign in again when the Trevize session has ended", () =>
       return yield* manager.getExisting;
     }).pipe(provideManager([], { "/api/auth/token": [{ status: 401, body: {} }] }), Effect.flip);
 
-    assert.instanceOf(error, CliTokenManager.CloudCliCredentialRefreshError);
-    if (error instanceof CliTokenManager.CloudCliCredentialRefreshError) {
+    assert.isTrue(CliTokenManager.isCloudCliCredentialRefreshError(error));
+    if (CliTokenManager.isCloudCliCredentialRefreshError(error)) {
       assert.isTrue(error.requiresLogin);
     }
   }),

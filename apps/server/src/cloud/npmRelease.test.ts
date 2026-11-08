@@ -153,9 +153,9 @@ it.effect("falls back to public npm only when npm is not installed", () =>
     yield* TestClock.adjust("15 seconds");
     expect(Result.isFailure(yield* Fiber.join(stalled))).toBe(true);
     expect(urls).toEqual([
-      "https://registry.npmjs.org/t3/nightly",
-      "https://registry.npmjs.org/t3/9.9.9",
-      "https://registry.npmjs.org/t3/latest",
+      "https://registry.npmjs.org/@trevize/code/nightly",
+      "https://registry.npmjs.org/@trevize/code/9.9.9",
+      "https://registry.npmjs.org/@trevize/code/latest",
     ]);
   }),
 );
