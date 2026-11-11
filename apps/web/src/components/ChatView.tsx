@@ -368,6 +368,10 @@ import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
+import {
+  BROWSER_PANEL_DEFAULT_WIDTH,
+  BROWSER_PANEL_WIDTH_STORAGE_KEY,
+} from "../hooks/usePreviewPanelInlineSize";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
@@ -4000,7 +4004,14 @@ export default function ChatView(props: ChatViewProps) {
         <ChatRightPanel
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
-          widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
+          // The browser needs room to be usable, so it keeps its own width
+          // across threads; other surfaces share the per-thread width.
+          {...(activeRightPanelKind === "preview"
+            ? {
+                widthStorageKey: BROWSER_PANEL_WIDTH_STORAGE_KEY,
+                defaultWidth: BROWSER_PANEL_DEFAULT_WIDTH,
+              }
+            : { widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}` })}
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}

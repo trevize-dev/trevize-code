@@ -16,6 +16,8 @@ const PREVIEW_PANEL_MAX_WIDTH_FRACTION = 0.7;
 /** Below this, the sibling chat column's composer overflows. */
 const SIBLING_COLUMN_MIN_WIDTH = 360;
 const PREVIEW_PANEL_DEFAULT_WIDTH = 540;
+export const BROWSER_PANEL_WIDTH_STORAGE_KEY = "t3code:browser-panel-width";
+export const BROWSER_PANEL_DEFAULT_WIDTH = 1024;
 
 export function usePreviewPanelInlineSize(
   options: {
