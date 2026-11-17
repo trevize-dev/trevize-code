@@ -24,6 +24,7 @@ import {
   DEFAULT_TREVIZE_API_URL,
   TrevizeApiError,
   TrevizeRepositoryNotConnectedError,
+  archiveEnvironment,
   archiveSpace as archiveTrevizeSpace,
   createEnvironment as createTrevizeEnvironment,
   createSpace as createTrevizeSpace,
@@ -161,6 +162,24 @@ export function planTrevizeSync(input: TrevizeSyncInput): TrevizeSyncPlan {
   return { actions, managedOrigins: [...managed].sort() };
 }
 
+/**
+ * Saved environments that run one-off cloud sessions: Trevize environments
+ * outside spaces, which Trevize itself treats as single tasks. New threads
+ * never default to them, and they archive instead of settling.
+ */
+function findCloudSessionEnvironments(
+  environments: ReadonlyArray<TrevizeEnvironment>,
+  saved: ReadonlyArray<ConnectionCatalogEntry>,
+): ReadonlyMap<EnvironmentId, TrevizeEnvironment> {
+  const sessions = new Map<EnvironmentId, TrevizeEnvironment>();
+  for (const environment of environments) {
+    if (environment.spaceId || environment.status === "archived") continue;
+    const environmentId = findSavedTrevizeEnvironment(saved, environment.httpBaseUrl);
+    if (environmentId !== null) sessions.set(environmentId, environment);
+  }
+  return sessions;
+}
+
 export interface TrevizeCloudSyncState {
   readonly signedIn: boolean;
   readonly syncing: boolean;
@@ -172,6 +191,8 @@ export interface TrevizeCloudSyncState {
   readonly sleeping: ReadonlyMap<EnvironmentId, TrevizeEnvironment>;
   /** Saved environments a wake is in flight for. */
   readonly waking: ReadonlySet<EnvironmentId>;
+  /** Saved environments of one-off cloud sessions (`findCloudSessionEnvironments`). */
+  readonly sessionEnvironments: ReadonlyMap<EnvironmentId, TrevizeEnvironment>;
   /** Workspaces whose Trevize offers spaces; empty means spaces are unavailable. */
   readonly spaceWorkspaceIds: ReadonlyArray<string>;
   /** Live (not archived) spaces of those workspaces. */
@@ -195,6 +216,7 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   environments: [],
   sleeping: new Map(),
   waking: new Set(),
+  sessionEnvironments: new Map(),
   spaceWorkspaceIds: [],
   spaces: [],
   spaceThreads: [],
@@ -297,6 +319,12 @@ export class TrevizeCloudSync extends Context.Service<
     readonly launchSession: (
       input: LaunchSessionInput,
     ) => Effect.Effect<LaunchedSession, TrevizeApiError | TrevizeRepositoryNotConnectedError>;
+    /**
+     * Archives a cloud session's environment on Trevize and forgets it on
+     * this device. Needs only Trevize, so it works while the sandbox is
+     * asleep or unreachable. Does nothing for other environments.
+     */
+    readonly archiveSession: (environmentId: EnvironmentId) => Effect.Effect<void, TrevizeApiError>;
   }
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
@@ -545,6 +573,10 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     if (managedOrigins.join("\n") !== [...settings.managedOrigins].sort().join("\n")) {
       yield* settingsStore.update((current) => ({ ...current, managedOrigins }));
     }
+    // Read after the actions, so environments paired just now count.
+    const sessionEnvironments = findCloudSessionEnvironments(environments, [
+      ...(yield* SubscriptionRef.get(registry.entries)).values(),
+    ]);
     const now = yield* Clock.currentTimeMillis;
     yield* SubscriptionRef.update(state, (current) => ({
       ...current,
@@ -554,6 +586,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       error: null,
       environments,
       sleeping,
+      sessionEnvironments,
       workspaces,
       connectedRepositories,
       ...Option.getOrElse(spaceListing, () => ({
@@ -795,6 +828,11 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     }).pipe(Effect.provideContext(context));
     input.onPhase?.("starting");
     const environmentId = yield* connect(config, environment);
+    // Known before the next sync, so a new thread opened meanwhile never lands here.
+    yield* SubscriptionRef.update(state, (current) => ({
+      ...current,
+      sessionEnvironments: new Map([...current.sessionEnvironments, [environmentId, environment]]),
+    }));
     input.onPhase?.("starting-agent");
     const dispatched = yield* dispatchThread(config, environment.id, {
       repositoryId: input.repository,
@@ -830,6 +868,37 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     return launched;
   });
 
+  const archiveSession = Effect.fn("TrevizeCloudSync.archiveSession")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    const environment = (yield* SubscriptionRef.get(state)).sessionEnvironments.get(environmentId);
+    if (environment === undefined) return;
+    const { config } = yield* requireConfig("archive this cloud session");
+    // The sandbox stops now; reconnecting meanwhile would only wake it again.
+    yield* registry.setRetriesPaused(environmentId, true);
+    yield* archiveEnvironment(config, environment.id).pipe(
+      Effect.provideContext(context),
+      Effect.tapError(() => registry.setRetriesPaused(environmentId, false)),
+    );
+    yield* SubscriptionRef.update(state, (current) => {
+      const sessionEnvironments = new Map(current.sessionEnvironments);
+      sessionEnvironments.delete(environmentId);
+      const sleeping = new Map(current.sleeping);
+      sleeping.delete(environmentId);
+      return { ...current, sessionEnvironments, sleeping };
+    });
+    // The next sync would remove it too, since Trevize no longer lists it.
+    yield* registry.remove(environmentId).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not remove an archived Trevize environment.", {
+          environmentId,
+          error,
+        }),
+      ),
+    );
+    yield* syncNow;
+  });
+
   // The one sync loop: runs at start, then on request or every interval.
   yield* Effect.gen(function* () {
     while (true) {
@@ -852,6 +921,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     updateSpace,
     archiveSpace,
     launchSession,
+    archiveSession,
   });
 });
 

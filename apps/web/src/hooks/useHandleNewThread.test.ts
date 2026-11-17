@@ -6,6 +6,9 @@ const testState = vi.hoisted(() => {
   let projectFileRead = Promise.resolve<null>(null);
   let projectRemoved = false;
   let connectedEnvironmentIds = ["environment-primary", "environment-ssh"];
+  // The project's copy on the primary environment, when the test has one.
+  let primaryProject: { readonly id: string; readonly environmentId: string } | null = null;
+  const cloudSessionEnvironmentIds = new Set<string>();
   let targetSettings = {
     defaultThreadEnvMode: "local" as "local" | "worktree" | null,
     newWorktreesStartFromOrigin: false,
@@ -64,6 +67,15 @@ const testState = vi.hoisted(() => {
     get connectedEnvironmentIds() {
       return connectedEnvironmentIds;
     },
+    get primaryProject() {
+      return primaryProject;
+    },
+    cloudSessionEnvironmentIds,
+    /** Makes the project's own environment a cloud session with a copy on the primary. */
+    runInCloudSession() {
+      cloudSessionEnvironmentIds.add("environment-ssh");
+      primaryProject = { id: "project-local", environmentId: "environment-primary" };
+    },
     disconnect(environmentId: string) {
       connectedEnvironmentIds = connectedEnvironmentIds.filter((id) => id !== environmentId);
     },
@@ -95,6 +107,8 @@ const testState = vi.hoisted(() => {
       openDraftRoute = null;
       draftsWithUserText = new Set();
       projectRemoved = false;
+      primaryProject = null;
+      cloudSessionEnvironmentIds.clear();
       connectedEnvironmentIds = ["environment-primary", "environment-ssh"];
       targetSettings = {
         defaultThreadEnvMode: workspaceDefaults.envMode,
@@ -134,7 +148,9 @@ vi.mock("../rpc/atomRegistry", () => ({
     get: (atom: unknown) =>
       atom === "connected-environment-ids"
         ? testState.connectedEnvironmentIds
-        : testServerConfigs(),
+        : atom === "primary-environment-id"
+          ? "environment-primary"
+          : testServerConfigs(),
   },
 }));
 
@@ -223,7 +239,12 @@ vi.mock("../state/entities", () => {
   };
   return {
     readProject: () => (testState.projectRemoved ? null : project),
-    readProjects: () => (testState.projectRemoved ? [] : [project]),
+    readProjects: () =>
+      testState.projectRemoved
+        ? []
+        : testState.primaryProject
+          ? [project, { ...project, ...testState.primaryProject }]
+          : [project],
     readThreadShell: () => null,
     readThreadShells: () => [],
     useProjects: () => [],
@@ -237,6 +258,12 @@ vi.mock("../state/presentation", () => ({
 vi.mock("../state/server", () => ({
   environmentServerConfigsAtom: {},
   primaryServerSettingsAtom: "primary-settings",
+}));
+vi.mock("../state/primaryEnvironment", () => ({
+  primaryEnvironmentIdAtom: "primary-environment-id",
+}));
+vi.mock("../trevize/cloudSessions", () => ({
+  readCloudSessionEnvironmentIds: () => testState.cloudSessionEnvironmentIds,
 }));
 vi.mock("../threadRoutes", () => ({
   resolveThreadRouteTarget: () => testState.openDraftRoute,
@@ -314,6 +341,24 @@ describe.each([
 });
 
 describe("useNewThreadHandler", () => {
+  it("opens a thread asked for in a cloud session's sandbox on the primary environment", async () => {
+    testState.reset(null);
+    testState.runInCloudSession();
+    const pendingOpen = useNewThreadHandler()({
+      environmentId: "environment-ssh",
+      projectId: "project-remote",
+    } as never);
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenCalledWith(
+      "remote-project",
+      { environmentId: "environment-primary", projectId: "project-local" },
+      opened!.draftId,
+      expect.anything(),
+    );
+  });
+
   it("keeps the text of a draft that gained some while it waited", async () => {
     testState.reset(null);
     const raced = {

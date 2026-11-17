@@ -19,6 +19,7 @@ import {
 import { useComposerDraftStore, DraftId } from "../../composerDraftStore";
 import { type EnvironmentPresentation, useEnvironmentProviders } from "../../state/environments";
 import { useProjects } from "../../state/entities";
+import { useCloudSessionEnvironmentIds } from "../../trevize/cloudSessions";
 import type { DraftSessionState } from "../../composerDraftStore";
 
 interface DraftEnvironmentRoutingInput {
@@ -74,11 +75,14 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
   const allProjects = useProjects();
   const { openScratchProject } = useScratchProject();
   const needsLoadBalancing = automaticEnvironment && !draftThread?.loadBalancedEnvironmentId;
+  const cloudSessionEnvironmentIds = useCloudSessionEnvironmentIds();
   const loadBalancingCandidates = needsLoadBalancing
     ? logicalProjectEnvironments
         .filter((candidate) => {
           const environment = environmentById.get(candidate.environmentId);
           return (
+            // A cloud session's sandbox is that session's alone.
+            !cloudSessionEnvironmentIds.has(candidate.environmentId) &&
             environment?.connection.phase === "connected" &&
             (loadBalancingSettings.loadBalancingWeights[candidate.environmentId] ?? 50) > 0 &&
             referencedThreadContexts.every(

@@ -359,6 +359,20 @@ export const stopEnvironment = Effect.fn("clientRuntime.trevize.stopEnvironment"
   );
 });
 
+/** Stops the environment's sandbox for good and hides it from listings. */
+export const archiveEnvironment = Effect.fn("clientRuntime.trevize.archiveEnvironment")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.post(
+      apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/archive`),
+    ),
+    TrevizeEnvironment,
+  );
+});
+
 /** One `connect` call. Wakes a stopped environment and may answer `starting`. */
 const requestConnect = Effect.fn("clientRuntime.trevize.requestConnect")(function* (
   config: TrevizeApiConfig,

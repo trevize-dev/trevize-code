@@ -8,14 +8,17 @@ import {
   TrevizeSpaces,
   TrevizeSync,
 } from "@t3tools/client-runtime/trevize";
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import type { EnvironmentId, RepositoryIdentity, ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { readLocalApi } from "~/localApi";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { readThreadShells } from "~/state/entities";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -28,6 +31,7 @@ import {
 import {
   TREVIZE_SETTINGS_STORAGE_KEY,
   TrevizeClientSettings,
+  archiveSession,
   defaultTrevizeSettings,
   launchSession,
   syncStateValueAtom,
@@ -209,5 +213,53 @@ export function useLaunchCloudSession() {
       }),
     );
     return queued;
+  };
+}
+
+const sameIds = (a: ReadonlySet<EnvironmentId>, b: ReadonlySet<EnvironmentId>) =>
+  a.size === b.size && [...a].every((environmentId) => b.has(environmentId));
+
+const cloudSessionEnvironmentIdsAtom = Atom.map(
+  syncStateValueAtom,
+  (sync): ReadonlySet<EnvironmentId> => new Set(sync.sessionEnvironments.keys()),
+).pipe(Atom.withEquality(sameIds));
+
+/** `readCloudSessionEnvironmentIds`, re-rendering only when the set changes. */
+export function useCloudSessionEnvironmentIds(): ReadonlySet<EnvironmentId> {
+  return useAtomValue(cloudSessionEnvironmentIdsAtom);
+}
+
+/**
+ * Saved environments of one-off cloud sessions. New threads never default to
+ * them: their sandbox belongs to the session that started it.
+ */
+export function readCloudSessionEnvironmentIds(): ReadonlySet<EnvironmentId> {
+  return appAtomRegistry.get(cloudSessionEnvironmentIdsAtom);
+}
+
+/**
+ * Archives a cloud session in place of Settle. Needs only Trevize, so it works
+ * while the sandbox sleeps. Asks first, since unpushed work goes with the
+ * sandbox; a declined confirm resolves as interrupted.
+ */
+export function useArchiveCloudSession() {
+  const run = useAtomCommand(archiveSession, { reportFailure: false });
+  return async (target: ScopedThreadRef) => {
+    const title = readThreadShells().find(
+      (thread) => thread.environmentId === target.environmentId && thread.id === target.threadId,
+    )?.title;
+    const confirmed = await readLocalApi()?.dialogs.confirm(
+      [
+        title ? `Archive cloud session "${title}"?` : "Archive this cloud session?",
+        "Its sandbox stops and is removed. Push anything you want to keep first.",
+      ].join("\n"),
+      { variant: "destructive" },
+    );
+    if (confirmed === false) return AsyncResult.failure(Cause.interrupt());
+    const result = await run(target.environmentId);
+    if (result._tag === "Success") {
+      toastManager.add(stackedThreadToast({ type: "success", title: "Cloud session archived" }));
+    }
+    return result;
   };
 }

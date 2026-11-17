@@ -11,6 +11,7 @@ export type ThreadActionMenuId =
   | "unpin"
   | "settle"
   | "unsettle"
+  | "archive-session"
   | "auto-settle"
   | "auto-settle:enabled"
   | "auto-settle:disabled"
@@ -76,6 +77,8 @@ export interface ThreadActionMenuState {
     readonly isActive: boolean;
   } | null;
   readonly isPinned: boolean;
+  /** A Trevize cloud session: Archive replaces Settle, see `useArchiveCloudSession`. */
+  readonly isCloudSession: boolean;
   readonly isSettled: boolean;
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
@@ -97,9 +100,13 @@ export interface ThreadActionMenuState {
   readonly canTurnIntoProject?: boolean;
 }
 
-/** Local navigation, read markers, and copying remain available to read-only clients. */
+/**
+ * Local navigation, read markers, and copying remain available to read-only
+ * clients. Archiving a cloud session goes to Trevize, not the sandbox.
+ */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
+    "archive-session",
     "find",
     "new-thread-on-branch",
     "project-settings",
@@ -136,13 +143,15 @@ export function buildThreadActionMenuItems(
             : { id: "pin" as const, label: "Pin thread", icon: "pin" },
         ]
       : []),
-    ...(state.supports.settlement
-      ? [
-          state.isSettled
-            ? { id: "unsettle" as const, label: "Un-settle thread", icon: "circle-check" }
-            : { id: "settle" as const, label: "Settle thread", icon: "circle-check" },
-        ]
-      : []),
+    ...(state.isCloudSession
+      ? [{ id: "archive-session" as const, label: "Archive cloud session", icon: "archive" }]
+      : state.supports.settlement
+        ? [
+            state.isSettled
+              ? { id: "unsettle" as const, label: "Un-settle thread", icon: "circle-check" }
+              : { id: "settle" as const, label: "Settle thread", icon: "circle-check" },
+          ]
+        : []),
     ...(state.supports.snooze
       ? [
           state.isSnoozed

@@ -7,6 +7,7 @@ const baseState: ThreadActionMenuState = {
   branch: null,
   projectFilter: null,
   isPinned: false,
+  isCloudSession: false,
   isSettled: false,
   autoSettleEnabled: true,
   isSnoozed: false,
@@ -26,6 +27,22 @@ const baseState: ThreadActionMenuState = {
 };
 
 describe("buildThreadActionMenuItems", () => {
+  it("offers Archive in place of Settle on a cloud session, even without permission", () => {
+    for (const isSettled of [false, true]) {
+      const items = buildThreadActionMenuItems({
+        ...baseState,
+        canOperate: false,
+        isCloudSession: true,
+        isSettled,
+      });
+      const ids = items.map((item) => item.id);
+      expect(ids).toContain("archive-session");
+      expect(ids).not.toContain("settle");
+      expect(ids).not.toContain("unsettle");
+      expect(items.find((item) => item.id === "archive-session")?.disabled).toBeUndefined();
+    }
+  });
+
   it.each([false, true])(
     "disables both lifecycle directions without permission (reversed: %s)",
     (reversed) => {
