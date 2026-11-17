@@ -330,6 +330,10 @@ const makeHarness = Effect.fn(function* (input: {
       sentMessages.push({ threadId: message[1], prompt });
       return Promise.resolve(Response.json({ threadId: message[1] }));
     }
+    const archived = /^\/api\/v1\/environments\/([^/]+)\/archive$/.exec(url.pathname);
+    if (archived?.[1] !== undefined) {
+      return Promise.resolve(Response.json(trevizeEnvironment(archived[1], "archived")));
+    }
     if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
     }
@@ -607,6 +611,40 @@ describe("TrevizeCloudSync", () => {
           threadId: "t3-thread-new",
           unsent: [],
         });
+        // Known as a session before the next sync lists it.
+        const { sessionEnvironments } = yield* SubscriptionRef.get(sync.state);
+        expect([...sessionEnvironments.keys()]).toEqual([route.environmentId]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("archives a cloud session's environment and forgets it, but no space's", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [savedEntry(T3_A, origin("env_a")), savedEntry(T3_B, origin("env_space"))],
+        environments: [
+          trevizeEnvironment("env_a", "running"),
+          { ...trevizeEnvironment("env_space", "running"), spaceId: "spc_1" },
+        ],
+        managedOrigins: [origin("env_a"), origin("env_space")],
+      });
+
+      yield* Effect.gen(function* () {
+        const synced = yield* awaitState((state) => state.lastSyncedAt !== null);
+        expect(Option.map(synced, (state) => [...state.sessionEnvironments.keys()])).toEqual(
+          Option.some([T3_A]),
+        );
+        const sync = yield* TrevizeSync.TrevizeCloudSync;
+
+        yield* sync.archiveSession(T3_B);
+        expect(harness.requests.filter((request) => request.endsWith("/archive"))).toEqual([]);
+
+        yield* sync.archiveSession(T3_A);
+        expect(harness.requests).toContain("POST /api/v1/environments/env_a/archive");
+        // Saved no more, and never retried while the sandbox stopped.
+        expect(harness.removed).toEqual([T3_A]);
+        expect(harness.retried).toEqual([]);
+        expect((yield* SubscriptionRef.get(sync.state)).sessionEnvironments.size).toBe(0);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

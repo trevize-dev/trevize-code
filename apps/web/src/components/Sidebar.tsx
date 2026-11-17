@@ -253,6 +253,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SpacesSidebarSection, useSpaceEnvironmentIds } from "../trevize/Spaces";
+import { readCloudSessionEnvironmentIds } from "../trevize/cloudSessions";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
@@ -1629,6 +1630,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (settlingThreadKeysRef.current.has(threadKey)) return;
       settlingThreadKeysRef.current.add(threadKey);
       const navigateAfterSettle = planForwardNavigation(threadKey, opts.coSettlingKeys);
+      // settleThread archives a cloud session, which removes the thread.
+      const cloudSession = readCloudSessionEnvironmentIds().has(threadRef.environmentId);
       const result = await settleThread(threadRef);
       settlingThreadKeysRef.current.delete(threadKey);
       if (result._tag === "Failure") {
@@ -1637,7 +1640,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to settle thread",
+              title: cloudSession ? "Failed to archive cloud session" : "Failed to settle thread",
               description: error instanceof Error ? error.message : "An error occurred.",
             }),
           );
@@ -1645,13 +1648,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         return;
       }
       if (
-        shouldNavigateAfterThreadPark({
-          threadKey,
-          currentThreadKey: readRouteThreadKey(router),
-          action: "settle",
-          now: new Date().toISOString(),
-          thread: readThreadShell(threadRef),
-        })
+        cloudSession
+          ? threadKey === readRouteThreadKey(router)
+          : shouldNavigateAfterThreadPark({
+              threadKey,
+              currentThreadKey: readRouteThreadKey(router),
+              action: "settle",
+              now: new Date().toISOString(),
+              thread: readThreadShell(threadRef),
+            })
       ) {
         navigateAfterSettle?.();
       }
@@ -2640,6 +2645,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     }
                   : null,
               isPinned,
+              isCloudSession: readCloudSessionEnvironmentIds().has(threadRef.environmentId),
               isSettled,
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
@@ -2716,6 +2722,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           }
           case "settle":
+          case "archive-session":
+            // settleThread archives a cloud session.
             attemptSettle(threadRef);
             return;
           case "unsettle":

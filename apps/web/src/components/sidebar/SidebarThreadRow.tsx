@@ -32,6 +32,7 @@ import {
   AlarmClockIcon,
   AlarmClockOffIcon,
   ArrowRightLeftIcon,
+  ArchiveIcon,
   CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
@@ -68,6 +69,7 @@ import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+import { useCloudSessionEnvironmentIds } from "../../trevize/cloudSessions";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -656,6 +658,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
+  // A cloud session archives instead of settling, through Trevize, so it
+  // needs neither the sandbox online nor its settle capability.
+  const cloudSession = useCloudSessionEnvironmentIds().has(thread.environmentId);
+  const canSettle = cloudSession || props.settlementSupported;
+  const settleLabel = cloudSession ? "Archive cloud session" : "Settle thread";
   const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(props.isActive);
   const { revealRef } = props;
   const rowRef = (row: HTMLElement | null) => {
@@ -1334,7 +1341,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         <AlarmClockOffIcon className="mb-px size-3" />
                       </button>
                     )
-                  ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
+                  ) : !canSettle ? null : variantAction === "unsettle" && !cloudSession ? (
                     <Tooltip>
                       <TooltipTrigger
                         render={
@@ -1360,7 +1367,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         render={
                           <button
                             type="button"
-                            aria-label="Settle thread"
+                            aria-label={settleLabel}
                             onClick={handleSettleClick}
                             onPointerDown={handleActionPointerDown}
                             className={cn(
@@ -1370,9 +1377,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           />
                         }
                       >
-                        <CheckIcon className="size-3" />
+                        {cloudSession ? (
+                          <ArchiveIcon className="size-3" />
+                        ) : (
+                          <CheckIcon className="size-3" />
+                        )}
                       </TooltipTrigger>
-                      <TooltipPopup side="top">Settle thread</TooltipPopup>
+                      <TooltipPopup side="top">{settleLabel}</TooltipPopup>
                     </Tooltip>
                   )}
                   {jumpHintLabel ? <JumpHintBadge label={jumpHintLabel} /> : null}
@@ -1511,7 +1522,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
                     )}
                   </span>
-                  {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
+                  {canSettle || showSnoozeButton || hasUnsentDraft ? (
                     <span
                       className={cn(
                         // Mouse clicks leave Settle focused; focus-within would pin controls over
@@ -1546,23 +1557,27 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           environmentId={thread.environmentId}
                         />
                       ) : null}
-                      {props.settlementSupported ? (
+                      {canSettle ? (
                         <Tooltip>
                           <TooltipTrigger
                             render={
                               <button
                                 type="button"
-                                aria-label="Settle thread"
+                                aria-label={settleLabel}
                                 onClick={handleSettleClick}
                                 onPointerDown={handleActionPointerDown}
                                 className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
                               />
                             }
                           >
-                            <CheckIcon className="size-3.5" />
-                            Settle
+                            {cloudSession ? (
+                              <ArchiveIcon className="size-3.5" />
+                            ) : (
+                              <CheckIcon className="size-3.5" />
+                            )}
+                            {cloudSession ? "Archive" : "Settle"}
                           </TooltipTrigger>
-                          <TooltipPopup>Settle thread</TooltipPopup>
+                          <TooltipPopup>{settleLabel}</TooltipPopup>
                         </Tooltip>
                       ) : null}
                     </span>

@@ -57,6 +57,7 @@ import { useClientSettings } from "./useSettings";
 import * as ThreadUndo from "@t3tools/client-runtime/state/thread-undo";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
+import { readCloudSessionEnvironmentIds, useArchiveCloudSession } from "../trevize/cloudSessions";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 
@@ -286,6 +287,7 @@ export function useThreadActions() {
   const settleThreadMutation = useOrchestrationCommand(threadEnvironment.settle, {
     reportFailure: false,
   });
+  const archiveCloudSession = useArchiveCloudSession();
   const unsettleThreadMutation = useOrchestrationCommand(threadEnvironment.unsettle, {
     reportFailure: false,
   });
@@ -744,6 +746,11 @@ export function useThreadActions() {
   };
 
   const settleThread = async (target: ScopedThreadRef) => {
+    // A cloud session is not settled but archived, sandbox and all, so
+    // every Settle entry point works even while the sandbox is offline.
+    if (readCloudSessionEnvironmentIds().has(target.environmentId)) {
+      return archiveCloudSession(target);
+    }
     if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
       return AsyncResult.failure(
         Cause.fail(

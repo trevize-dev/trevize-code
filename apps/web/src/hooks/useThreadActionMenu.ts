@@ -47,6 +47,7 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import { readCloudSessionEnvironmentIds } from "../trevize/cloudSessions";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -139,6 +140,7 @@ export function useThreadActionMenu(input: {
         branch: thread.branch ?? null,
         projectFilter: null,
         isPinned: thread.pinnedAt != null,
+        isCloudSession: readCloudSessionEnvironmentIds().has(threadRef.environmentId),
         isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
@@ -224,6 +226,10 @@ export function useThreadActionMenu(input: {
         }
         case "settle":
           await reportFailure("Failed to settle thread", () => settleThread(threadRef));
+          return;
+        case "archive-session":
+          // settleThread archives a cloud session.
+          await reportFailure("Failed to archive cloud session", () => settleThread(threadRef));
           return;
         case "unsettle":
           await reportFailure("Failed to un-settle thread", () => unsettleThread(threadRef));

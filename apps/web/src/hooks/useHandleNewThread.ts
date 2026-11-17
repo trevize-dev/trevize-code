@@ -37,6 +37,8 @@ import {
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
+import { readCloudSessionEnvironmentIds } from "../trevize/cloudSessions";
 import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -63,6 +65,34 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
+/**
+ * Where a new thread asked for at `projectRef` opens. A cloud session's
+ * sandbox belongs to that session, so a request there (say, from one of its
+ * threads) moves to another member of the same logical project, the primary
+ * environment first, and stays only when the project lives nowhere else.
+ */
+function outsideCloudSessions(
+  projectRef: ScopedProjectRef,
+  projects: ReturnType<typeof readProjects>,
+  logicalKeyOf: (project: ReturnType<typeof readProjects>[number]) => string,
+): ScopedProjectRef {
+  const sessions = readCloudSessionEnvironmentIds();
+  if (!sessions.has(projectRef.environmentId)) return projectRef;
+  const project = projects.find(
+    (candidate) =>
+      candidate.id === projectRef.projectId && candidate.environmentId === projectRef.environmentId,
+  );
+  if (project === undefined) return projectRef;
+  const logicalKey = logicalKeyOf(project);
+  const primaryEnvironmentId = appAtomRegistry.get(primaryEnvironmentIdAtom);
+  const siblings = projects.filter(
+    (candidate) => !sessions.has(candidate.environmentId) && logicalKeyOf(candidate) === logicalKey,
+  );
+  const sibling =
+    siblings.find((candidate) => candidate.environmentId === primaryEnvironmentId) ?? siblings[0];
+  return sibling ? scopeProjectRef(sibling.environmentId, sibling.id) : projectRef;
+}
+
 export function useNewThreadHandler() {
   return createNewThreadHandler(useRouter());
 }
@@ -76,7 +106,7 @@ export function createNewThreadHandler(router: AnyRouter) {
   };
 
   return (
-    projectRef: ScopedProjectRef,
+    requestedProjectRef: ScopedProjectRef,
     options?: {
       branch?: string | null;
       worktreePath?: string | null;
@@ -89,6 +119,9 @@ export function createNewThreadHandler(router: AnyRouter) {
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
     const projectGroupingSettings = selectProjectGroupingSettings(getClientSettings());
+    const projectRef = outsideCloudSessions(requestedProjectRef, projects, (project) =>
+      deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings),
+    );
     // Read at call time; status pushes replace the config map and would recreate every sidebar handler.
     const environmentServerConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
     const targetServerSettings =

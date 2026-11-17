@@ -76,6 +76,7 @@ import type { RunStopPresentation } from "@t3tools/client-runtime/state/thread-e
 import { Atom } from "effect/reactivity";
 import { environmentThreadDetails } from "../../state/threads";
 import { openSideChatTab } from "../../lib/sideChatPane";
+import { readCloudSessionEnvironmentIds } from "../../trevize/cloudSessions";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
 const NO_RUN_STOP_ATOM = Atom.make<RunStopPresentation | null>(null).pipe(
@@ -649,14 +650,21 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     };
   const shortcuts = {
     "thread.settle": () => {
-      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
-      if (!activeThreadShell || !activeThreadRef || !serverConfigLoaded) return;
-      if (activeThreadSettled) {
+      // A cloud session archives through Trevize instead, sandbox online or not.
+      const cloudSession = readCloudSessionEnvironmentIds().has(environmentId);
+      if (!cloudSession && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
+        return false;
+      if (!activeThreadShell || !activeThreadRef || !(cloudSession || serverConfigLoaded)) return;
+      if (activeThreadSettled && !cloudSession) {
         void handleUnsettleActiveThread();
         return;
       }
       if (settleAndAdvance(activeThreadRef)) return;
-      void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to settle thread"));
+      void settleThread(activeThreadRef).then(
+        toastThreadActionFailure(
+          cloudSession ? "Failed to archive cloud session" : "Failed to settle thread",
+        ),
+      );
     },
     "thread.pin": ({ event }) => {
       // An open project list pins its highlighted project with this key instead.

@@ -234,3 +234,14 @@ export const launchSession = createRuntimeCommand(connectionAtomRuntime, {
   execute: (input: TrevizeSync.LaunchSessionInput) =>
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.launchSession(input))),
 });
+
+/** Archives a cloud session's environment on Trevize and forgets it here. */
+export const archiveSession = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:archive-session",
+  concurrency: {
+    mode: "singleFlight",
+    key: (environmentId: EnvironmentId) => environmentId,
+  },
+  execute: (environmentId: EnvironmentId) =>
+    TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.archiveSession(environmentId))),
+});
