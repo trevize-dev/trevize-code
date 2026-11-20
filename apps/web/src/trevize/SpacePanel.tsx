@@ -6,6 +6,7 @@ import type {
   OrchestrationV2ThreadProjection,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { T, useGT, Var } from "gt-react";
 import { CheckIcon, CircleDotIcon, CircleIcon, FileTextIcon, RotateCwIcon } from "lucide-react";
 import { useEffect, useEffectEvent } from "react";
 
@@ -53,6 +54,7 @@ export function SpacePanel(props: {
   readonly fallbackEnvironmentId: EnvironmentId;
   readonly onOpenFile: (absolutePath: string) => void;
 }) {
+  const gt = useGT();
   const { spaces, threads } = useSpaces();
   const space = spaces.find((candidate) => candidate.id === props.spaceId) ?? null;
   const orchestrator = space ? TrevizeSpaces.findOrchestratorThread(space, threads) : null;
@@ -71,10 +73,14 @@ export function SpacePanel(props: {
         </div>
       ) : null}
 
-      <section aria-label="Tasks" className="space-y-2">
-        <h3 className="text-xs font-medium text-muted-foreground">Tasks</h3>
+      <section aria-label={gt("Tasks")} className="space-y-2">
+        <h3 className="text-xs font-medium text-muted-foreground">
+          <T>Tasks</T>
+        </h3>
         {plan === null ? (
-          <p className="text-sm text-muted-foreground">No tasks yet</p>
+          <p className="text-sm text-muted-foreground">
+            <T>No tasks yet</T>
+          </p>
         ) : (
           <ul className="space-y-1.5">
             {plan.steps.map((step) => (
@@ -90,11 +96,11 @@ export function SpacePanel(props: {
                   )}
                 >
                   {step.status === "completed" ? (
-                    <CheckIcon aria-label="Completed" />
+                    <CheckIcon aria-label={gt("Completed", { $context: "task status" })} />
                   ) : step.status === "running" ? (
-                    <CircleDotIcon aria-label="Running" />
+                    <CircleDotIcon aria-label={gt("Running", { $context: "task status" })} />
                   ) : (
-                    <CircleIcon aria-label="Pending" />
+                    <CircleIcon aria-label={gt("Pending", { $context: "task status" })} />
                   )}
                 </span>
                 <span
@@ -144,15 +150,20 @@ function SharedFiles(props: {
     if (props.changedAt !== null) onChanged();
   }, [props.changedAt]);
   const files = entries.filter((entry) => entry.kind === "file");
+  const gt = useGT();
 
   return (
-    <section aria-label={`Files in ${SPACE_SHARED_ROOT}`} className="space-y-2">
+    <section aria-label={gt("Files in {path}", { path: SPACE_SHARED_ROOT })} className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-medium text-muted-foreground">Files in {SPACE_SHARED_ROOT}</h3>
+        <h3 className="text-xs font-medium text-muted-foreground">
+          <T>
+            Files in <Var>{SPACE_SHARED_ROOT}</Var>
+          </T>
+        </h3>
         <Button
           size="icon-xs"
           variant="ghost-muted"
-          aria-label="Refresh files"
+          aria-label={gt("Refresh files")}
           disabled={isPending}
           onClick={refresh}
         >
@@ -162,7 +173,9 @@ function SharedFiles(props: {
       {error !== null ? (
         <p className="text-sm text-muted-foreground">{error}</p>
       ) : !ready ? null : files.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No files yet</p>
+        <p className="text-sm text-muted-foreground">
+          <T>No files yet</T>
+        </p>
       ) : (
         <ul className="space-y-0.5">
           {files.map((file) => (

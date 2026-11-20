@@ -1,6 +1,7 @@
 import { TrevizeSpaces } from "@t3tools/client-runtime/trevize";
 import { BanIcon, PlusIcon } from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
+import { T, useGT, useMessages } from "gt-react";
 import { useState, type CSSProperties } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -40,15 +41,16 @@ function CustomColorPanel(props: {
 }) {
   const [hsv, setHsv] = useState<HsvColor>(() => hexToHsv(props.value));
   const [hexDraft, setHexDraft] = useState<string | null>(null);
+  const gt = useGT();
   const commit = (next: HsvColor) => {
     setHsv(next);
     props.onChange(hsvToHex(next.h, next.s, next.v));
   };
   return (
     <div className="grid gap-3">
-      <ColorSaturationValuePlane label="Space color" value={hsv} onChange={commit} />
+      <ColorSaturationValuePlane label={gt("Space color")} value={hsv} onChange={commit} />
       <ColorHueSlider
-        label="Space color hue"
+        label={gt("Space color hue")}
         value={hsv.h}
         onChange={(h) => commit({ ...hsv, h })}
       />
@@ -57,7 +59,7 @@ function CustomColorPanel(props: {
         size="compact"
         font="mono"
         spellCheck={false}
-        aria-label="Custom hex color"
+        aria-label={gt("Custom hex color")}
         value={hexDraft ?? hsvToHex(hsv.h, hsv.s, hsv.v)}
         onChange={(event) => {
           const next = event.currentTarget.value;
@@ -84,6 +86,8 @@ export function SpaceIconPicker(props: {
   readonly onChange: (value: SpaceIconValue) => void;
 }) {
   const { value, onChange } = props;
+  const gt = useGT();
+  const m = useMessages();
   const current = TrevizeSpaces.parseSpaceIcon(value.icon);
   const [mode, setMode] = useState<"icon" | "emoji">(current?.kind ?? "icon");
   const [query, setQuery] = useState("");
@@ -109,7 +113,7 @@ export function SpaceIconPicker(props: {
             size="icon"
             variant="outline"
             disabled={props.disabled}
-            aria-label="Change icon and color"
+            aria-label={gt("Change icon and color")}
           />
         }
       >
@@ -118,7 +122,7 @@ export function SpaceIconPicker(props: {
       <PopoverPopup align="start" padding="compact" width="md">
         <div className="grid gap-3">
           <ToggleGroup
-            aria-label="Icon type"
+            aria-label={gt("Icon type")}
             variant="segmented"
             value={[mode]}
             onValueChange={(next) => {
@@ -126,8 +130,12 @@ export function SpaceIconPicker(props: {
               if (picked === "icon" || picked === "emoji") setMode(picked);
             }}
           >
-            <Toggle value="icon">Icons</Toggle>
-            <Toggle value="emoji">Emoji</Toggle>
+            <Toggle value="icon">
+              <T>Icons</T>
+            </Toggle>
+            <Toggle value="emoji">
+              <T>Emoji</T>
+            </Toggle>
           </ToggleGroup>
 
           {mode === "icon" ? (
@@ -136,8 +144,8 @@ export function SpaceIconPicker(props: {
                 autoFocus
                 size="sm"
                 type="search"
-                placeholder="Search icons"
-                aria-label="Search icons"
+                placeholder={gt("Search icons")}
+                aria-label={gt("Search icons")}
                 value={query}
                 onChange={(event) => setQuery(event.currentTarget.value)}
               />
@@ -158,7 +166,9 @@ export function SpaceIconPicker(props: {
                   ))}
                 </div>
                 {icons.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">No icons found.</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    <T>No icons found.</T>
+                  </p>
                 ) : null}
               </ScrollArea>
             </>
@@ -167,8 +177,8 @@ export function SpaceIconPicker(props: {
               <Input
                 autoFocus
                 size="sm"
-                placeholder="Type or paste any emoji"
-                aria-label="Custom emoji"
+                placeholder={gt("Type or paste any emoji")}
+                aria-label={gt("Custom emoji")}
                 onChange={(event) => {
                   const emoji = firstEmoji(event.currentTarget.value);
                   if (emoji) onChange({ ...value, icon: emoji });
@@ -180,7 +190,7 @@ export function SpaceIconPicker(props: {
                     <button
                       key={option.emoji}
                       type="button"
-                      aria-label={option.label}
+                      aria-label={m(option.label)}
                       aria-pressed={current?.kind === "emoji" && current.emoji === option.emoji}
                       className={cn(CELL_CLASS, "text-lg")}
                       onClick={() => onChange({ ...value, icon: option.emoji })}
@@ -196,12 +206,12 @@ export function SpaceIconPicker(props: {
           <div className="grid gap-2 border-t border-border pt-3">
             <div
               role="group"
-              aria-label="Color"
+              aria-label={gt("Color")}
               className="grid grid-cols-10 justify-items-center gap-y-1.5"
             >
               <button
                 type="button"
-                aria-label="Default color"
+                aria-label={gt("Default color")}
                 aria-pressed={value.color === null}
                 className={SWATCH_CLASS}
                 onClick={() => {
@@ -224,7 +234,7 @@ export function SpaceIconPicker(props: {
               ))}
               <button
                 type="button"
-                aria-label="Custom color"
+                aria-label={gt("Custom color")}
                 aria-pressed={customColor !== null}
                 aria-expanded={customOpen}
                 className={SWATCH_CLASS}
@@ -268,7 +278,7 @@ export function SpaceIconPicker(props: {
             }}
           >
             <BanIcon />
-            Reset icon and color
+            <T>Reset icon and color</T>
           </Button>
         </div>
       </PopoverPopup>
@@ -281,10 +291,11 @@ function ColorSwatch(props: {
   readonly selected: boolean;
   readonly onSelect: () => void;
 }) {
+  const m = useMessages();
   return (
     <button
       type="button"
-      aria-label={props.option.label}
+      aria-label={m(props.option.label)}
       aria-pressed={props.selected}
       className={SWATCH_CLASS}
       onClick={props.onSelect}

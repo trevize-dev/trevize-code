@@ -182,9 +182,9 @@ describe("revokeTrevizeSession", () => {
 
 // A JWT with `sub: "user_123"`; the relay verifies the signature, the client only reads the subject.
 const relayJwt = [
-  btoa(JSON.stringify({ alg: "EdDSA" })),
+  btoa(JSON.stringify({ alg: "EdDSA" })).replace(/=+$/, ""),
   btoa(JSON.stringify({ sub: "user_123", exp: 2_000_000_000 })).replace(/=+$/, ""),
-  "signature",
+  "c2lnbmF0dXJl",
 ].join(".");
 
 describe("fetchTrevizeRelayToken", () => {

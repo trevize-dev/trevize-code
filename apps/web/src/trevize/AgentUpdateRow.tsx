@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { TrevizeAgentUpdates } from "@t3tools/client-runtime/trevize";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { T, useGT, Var } from "gt-react";
 import {
   CircleAlertIcon,
   CircleCheckIcon,
@@ -68,6 +69,7 @@ export function TrevizeAgentUpdateRow(props: {
   readonly body: ReactNode;
 }) {
   const { update } = props;
+  const gt = useGT();
   const openThread = useOpenAgentUpdateThread();
   const [expanded, setExpanded] = useState(false);
   const toAgent = update.direction === "to-agent";
@@ -78,7 +80,7 @@ export function TrevizeAgentUpdateRow(props: {
         event.stopPropagation();
         openThread(update.thread);
       }}
-      aria-label={`Open ${update.title}`}
+      aria-label={gt("Open {title}", { title: update.title })}
     >
       {update.title}
     </InlineButton>
@@ -92,7 +94,13 @@ export function TrevizeAgentUpdateRow(props: {
         onClick={detail === null ? undefined : () => setExpanded((value) => !value)}
         label={
           <span className="text-sm">
-            {toAgent ? <>Message from {name}</> : <>{name} </>}
+            {toAgent ? (
+              <T>
+                Message from <Var>{name}</Var>
+              </T>
+            ) : (
+              <>{name} </>
+            )}
             {toAgent ? null : <span>{update.summary}</span>}
             {update.pullRequestUrl ? (
               <>
@@ -104,7 +112,7 @@ export function TrevizeAgentUpdateRow(props: {
                     <a href={update.pullRequestUrl} target="_blank" rel="noopener noreferrer" />
                   }
                 >
-                  Pull request
+                  <T>Pull request</T>
                   <ExternalLinkIcon className="size-3" />
                 </InlineButton>
               </>

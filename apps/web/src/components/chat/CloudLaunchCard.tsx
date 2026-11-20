@@ -1,6 +1,8 @@
 import type { TrevizeSync } from "@t3tools/client-runtime/trevize";
 import type { WorktreeSetupStage } from "@t3tools/contracts";
+import { msg, useGT, useMessages } from "gt-react";
 
+import { m, type MessageResolver } from "~/i18n/messages";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { cn } from "~/lib/utils";
 import type { CloudLaunch } from "~/trevize/cloudLaunches";
@@ -13,17 +15,28 @@ const PHASES: ReadonlyArray<TrevizeSync.CloudLaunchPhase> = [
   "starting-agent",
 ];
 
-function phaseLabel(phase: TrevizeSync.CloudLaunchPhase, launch: CloudLaunch): string {
+function phaseLabel(
+  phase: TrevizeSync.CloudLaunchPhase,
+  launch: CloudLaunch,
+  resolve: MessageResolver = m,
+): string {
   switch (phase) {
     case "creating":
-      return "Creating sandbox";
+      return resolve(msg("Creating sandbox"));
     case "starting":
       // Trevize reports booting and cloning as one step.
       return launch.branch
-        ? `Setting up sandbox, checking out ${launch.repository} (${launch.branch})`
-        : `Setting up sandbox, checking out ${launch.repository}`;
+        ? resolve(
+            msg("Setting up sandbox, checking out {repository} ({branch})", {
+              repository: launch.repository,
+              branch: launch.branch,
+            }),
+          )
+        : resolve(
+            msg("Setting up sandbox, checking out {repository}", { repository: launch.repository }),
+          );
     case "starting-agent":
-      return "Starting agent";
+      return resolve(msg("Starting agent"));
   }
 }
 
@@ -33,7 +46,8 @@ function PhaseRow({ phase, launch }: { phase: TrevizeSync.CloudLaunchPhase; laun
   const status: WorktreeSetupStage["status"] =
     index < current ? "done" : index === current ? "running" : "pending";
   const running = status === "running";
-  const label = phaseLabel(phase, launch);
+  const messages = useMessages();
+  const label = phaseLabel(phase, launch, messages);
   const next = PHASES[index + 1];
   return (
     <WorkLogRow
@@ -68,16 +82,20 @@ function PhaseRow({ phase, launch }: { phase: TrevizeSync.CloudLaunchPhase; laun
 
 /** A cloud session starting from this draft: its steps, and what waits for the agent. */
 export function CloudLaunchCard({ launch }: { launch: CloudLaunch }) {
+  const gt = useGT();
   const queued = launch.messages.length - 1;
   return (
-    <section aria-label="Starting cloud session" className="chat-content-lane">
+    <section aria-label={gt("Starting cloud session")} className="chat-content-lane">
       {PHASES.map((phase) => (
         <PhaseRow key={phase} phase={phase} launch={launch} />
       ))}
       <p className="mt-1 ml-8 text-xs text-muted-foreground">
         {queued > 0
-          ? `${queued === 1 ? "1 message" : `${queued} messages`} queued until the agent starts.`
-          : "A cold start can take a few minutes. Messages you send now are queued."}
+          ? gt(
+              "{count, plural, one {{count} message queued until the agent starts.} other {{count} messages queued until the agent starts.}}",
+              { count: queued },
+            )
+          : gt("A cold start can take a few minutes. Messages you send now are queued.")}
       </p>
     </section>
   );

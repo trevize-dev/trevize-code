@@ -7,6 +7,7 @@ import {
 } from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { msg, T, useGT } from "gt-react";
 import { PlusIcon } from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import * as Schema from "effect/Schema";
@@ -22,6 +23,7 @@ import {
 } from "~/components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { formatRelativeTime } from "~/timestampFormat";
 import { useEnvironments } from "~/state/environments";
@@ -164,8 +166,11 @@ export function ThreadStatusDot({ thread }: { readonly thread: TrevizeApi.Treviz
   );
 }
 
-export function spaceThreadTitle(thread: TrevizeApi.TrevizeThread): string {
-  return thread.title?.trim() || thread.branch?.trim() || "Untitled agent";
+export function spaceThreadTitle(
+  thread: TrevizeApi.TrevizeThread,
+  resolve: MessageResolver = m,
+): string {
+  return thread.title?.trim() || thread.branch?.trim() || resolve(msg("Untitled agent"));
 }
 
 /** Compact age, e.g. `2m`, for dense rows. */
@@ -178,6 +183,7 @@ export function compactAge(iso: string): string {
  * nothing unless signed in to Trevize Cloud with spaces available.
  */
 export function SpacesSidebarSection() {
+  const gt = useGT();
   const { available, spaces, threads, environments } = useSpaces();
   const navigate = useNavigate();
   const activeSpaceId = useParams({
@@ -192,11 +198,11 @@ export function SpacesSidebarSection() {
   );
   if (!available) return null;
   return (
-    <section aria-label="Spaces" className="mb-2">
+    <section aria-label={gt("Spaces")} className="mb-2">
       <div className="flex items-center gap-1">
         <div className="min-w-0 flex-1">
           <CollapsibleSectionHeader expanded={expanded} onClick={() => setExpanded(!expanded)}>
-            Spaces
+            <T>Spaces</T>
           </CollapsibleSectionHeader>
         </div>
         <Tooltip>
@@ -205,14 +211,16 @@ export function SpacesSidebarSection() {
               <Button
                 size="icon-xs"
                 variant="ghost-muted"
-                aria-label="New space"
+                aria-label={gt("New space")}
                 onClick={openNewSpaceDialog}
               />
             }
           >
             <PlusIcon />
           </TooltipTrigger>
-          <TooltipPopup>New space</TooltipPopup>
+          <TooltipPopup>
+            <T>New space</T>
+          </TooltipPopup>
         </Tooltip>
       </div>
       {expanded ? (
@@ -235,7 +243,7 @@ export function SpacesSidebarSection() {
                   {needsYou ? (
                     <span
                       role="img"
-                      aria-label="Needs you"
+                      aria-label={gt("Needs you")}
                       className="size-1.5 shrink-0 rounded-full bg-warning"
                     />
                   ) : null}
@@ -250,7 +258,9 @@ export function SpacesSidebarSection() {
             <SidebarMenuItem>
               <SidebarMenuButton onClick={openNewSpaceDialog}>
                 <PlusIcon />
-                <span>New space</span>
+                <span>
+                  <T>New space</T>
+                </span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ) : null}

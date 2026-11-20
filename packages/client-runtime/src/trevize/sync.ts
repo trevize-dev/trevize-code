@@ -260,6 +260,7 @@ export interface LaunchedSession {
 
 /** A cloud session environment's title: the prompt's first line, shortened. */
 export function cloudSessionTitle(prompt: string): string {
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- persisted as the cloud environment's title in Trevize, like user content
   return truncate(prompt.trim().split("\n", 1)[0] ?? "", 80) || "Cloud session";
 }
 

@@ -18,7 +18,9 @@ const TREVIZE_API_KEY_CREDENTIAL_ID = "trevize:api-key";
 export const loadTrevizeApiKey = Effect.fn("clientRuntime.trevize.loadApiKey")(function* () {
   const store = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const credential = yield* store.get(TREVIZE_API_KEY_CREDENTIAL_ID);
-  return Option.map(credential, (value) => value.token);
+  return Option.flatMap(credential, (value) =>
+    value._tag === "BearerConnectionCredential" ? Option.some(value.token) : Option.none(),
+  );
 });
 
 export const saveTrevizeApiKey = Effect.fn("clientRuntime.trevize.saveApiKey")(function* (

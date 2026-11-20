@@ -3,7 +3,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { createTrevizeAccount, type TrevizeRelayTokenLookup } from "./account.ts";
 
 const relayJwt = (sub: string) =>
-  [btoa(JSON.stringify({ alg: "EdDSA" })), btoa(JSON.stringify({ sub })), "signature"].join(".");
+  [
+    btoa(JSON.stringify({ alg: "EdDSA" })).replace(/=+$/, ""),
+    btoa(JSON.stringify({ sub })).replace(/=+$/, ""),
+    "c2lnbmF0dXJl",
+  ].join(".");
 
 function setup(lookups: Array<TrevizeRelayTokenLookup>) {
   const account = createTrevizeAccount(async () => lookups.shift() ?? { _tag: "Unknown" });

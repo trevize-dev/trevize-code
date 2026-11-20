@@ -1,6 +1,8 @@
 import type { ComposerContextRecord, OrchestrationMessageContext } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 import type { TrevizeEnvironment, TrevizeSpace, TrevizeThread } from "./api.ts";
 
@@ -77,7 +79,10 @@ function httpUrl(value: string | undefined): string | null {
 }
 
 /** The typed update behind a `trevize-agent` record, or null for any other or malformed record. */
-export function decodeTrevizeAgentRecord(record: ComposerContextRecord): TrevizeAgentUpdate | null {
+export function decodeTrevizeAgentRecord(
+  record: ComposerContextRecord,
+  resolve: MFunctionType = mFallback,
+): TrevizeAgentUpdate | null {
   if (record.kind !== TREVIZE_AGENT_CONTEXT_KIND || !("payload" in record)) return null;
   const decoded = decodePayload(record.payload);
   if (Option.isNone(decoded)) return null;
@@ -96,7 +101,9 @@ export function decodeTrevizeAgentRecord(record: ComposerContextRecord): Trevize
     title:
       nonBlank(payload.thread.title) ??
       nonBlank(record.label) ??
-      (payload.direction === "to-agent" ? "Orchestrator" : "Agent"),
+      (payload.direction === "to-agent"
+        ? resolve(msg("Orchestrator", { $context: "noun, the agent that coordinates a space" }))
+        : resolve(msg("Agent", { $context: "noun, a coding agent" }))),
     event: payload.event,
     summary: payload.summary.trim(),
     detail: nonBlank(payload.detail),
@@ -105,11 +112,14 @@ export function decodeTrevizeAgentRecord(record: ComposerContextRecord): Trevize
 }
 
 /** The agent update a message carries, or null for an ordinary message. */
-export function trevizeAgentUpdateOf(message: {
-  readonly context?: OrchestrationMessageContext | undefined;
-}): TrevizeAgentUpdate | null {
+export function trevizeAgentUpdateOf(
+  message: {
+    readonly context?: OrchestrationMessageContext | undefined;
+  },
+  resolve: MFunctionType = mFallback,
+): TrevizeAgentUpdate | null {
   for (const record of message.context?.records ?? []) {
-    const update = decodeTrevizeAgentRecord(record);
+    const update = decodeTrevizeAgentRecord(record, resolve);
     if (update !== null) return update;
   }
   return null;

@@ -11,11 +11,13 @@ import {
 import type { EnvironmentId, RepositoryIdentity, ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
+import { msg } from "gt-react";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { m } from "~/i18n/messages";
 import { readLocalApi } from "~/localApi";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { readThreadShells } from "~/state/entities";
@@ -163,7 +165,7 @@ export function useLaunchCloudSession() {
         toastManager.add(
           stackedThreadToast({
             type: "warning",
-            title: "Some queued messages were not sent",
+            title: m(msg("Some queued messages were not sent")),
             description: result.value.unsent.join("\n\n"),
           }),
         );
@@ -174,11 +176,11 @@ export function useLaunchCloudSession() {
         const toastId = toastManager.add(
           stackedThreadToast({
             type: "success",
-            title: "Cloud session started",
+            title: m(msg("Cloud session started")),
             description: TrevizeSync.cloudSessionTitle(displayPrompt),
             timeout: 20_000,
             actionProps: {
-              children: "Open",
+              children: m(msg("Open", { $context: "verb, opens the cloud session" })),
               onClick: () => {
                 toastManager.close(toastId);
                 void open();
@@ -197,12 +199,12 @@ export function useLaunchCloudSession() {
     const toastId = toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: "Could not start cloud session",
-        description: error instanceof Error ? error.message : "Trevize did not start it.",
+        title: m(msg("Could not start cloud session")),
+        description: error instanceof Error ? error.message : m(msg("Trevize did not start it.")),
         ...(connectUrl
           ? {
               actionProps: {
-                children: "Connect repository",
+                children: m(msg("Connect repository")),
                 onClick: () => {
                   toastManager.close(toastId);
                   openTrevizePage(connectUrl);
@@ -250,15 +252,19 @@ export function useArchiveCloudSession() {
     )?.title;
     const confirmed = await readLocalApi()?.dialogs.confirm(
       [
-        title ? `Archive cloud session "${title}"?` : "Archive this cloud session?",
-        "Its sandbox stops and is removed. Push anything you want to keep first.",
+        title
+          ? m(msg('Archive cloud session "{title}"?', { title }))
+          : m(msg("Archive this cloud session?")),
+        m(msg("Its sandbox stops and is removed. Push anything you want to keep first.")),
       ].join("\n"),
       { variant: "destructive" },
     );
     if (confirmed === false) return AsyncResult.failure(Cause.interrupt());
     const result = await run(target.environmentId);
     if (result._tag === "Success") {
-      toastManager.add(stackedThreadToast({ type: "success", title: "Cloud session archived" }));
+      toastManager.add(
+        stackedThreadToast({ type: "success", title: m(msg("Cloud session archived")) }),
+      );
     }
     return result;
   };

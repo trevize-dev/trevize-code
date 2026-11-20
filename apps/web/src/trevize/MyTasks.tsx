@@ -1,3 +1,4 @@
+import { msg } from "gt-react";
 import { useState } from "react";
 
 import {
@@ -10,6 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as Trevize from "./commands";
 
 import { toastManager } from "~/components/ui/toast";
+import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 type MyTask = TrevizeApi.TrevizeThread;
@@ -41,8 +43,8 @@ export function useOpenMyTask() {
     const error = squashAtomCommandFailure(result);
     toastManager.add({
       type: "error",
-      title: "Could not open task",
-      description: error instanceof Error ? error.message : "Trevize could not open it.",
+      title: m(msg("Could not open task")),
+      description: error instanceof Error ? error.message : m(msg("Trevize could not open it.")),
     });
   };
   return { open, openingTaskId };

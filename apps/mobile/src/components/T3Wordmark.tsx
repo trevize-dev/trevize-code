@@ -12,6 +12,7 @@ export function T3Wordmark(props: {
   const aspectRatio = 500 / 496.5;
   return (
     <Svg
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark
       accessibilityLabel="Trevize"
       height={props.height}
       width={props.height * aspectRatio}

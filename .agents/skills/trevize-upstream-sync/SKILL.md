@@ -108,6 +108,17 @@ Pattern by pattern, the conflicts we have seen:
   `t3 connect` CLI uses Clerk only when a Clerk key is configured
   (`cloudCliOAuthConfig` in `apps/server/src/cloud/publicConfig.ts`), otherwise the
   Trevize device flow in `CliTokenManager.ts`.
+- **i18n (since v0.1.8).** Upstream translates all UI copy with `gt-react` /
+  `gt-react-native` (rules in `docs/internals/i18n.md`), so most hunks are upstream wrapping
+  the same strings ours changed. Keep our text and apply their wrapper (`<T>`, `gt()`,
+  `resolve(msg())`, `m(msg())`); helpers like `resolveEnvModeLabel` now take a resolver, and
+  constant-table labels are `msg()` descriptors that render through `m(label)`.
+- **Clerk load-failure UI.** Upstream's `clerk/clerkLoadFailure.ts` calls `useClerk()`, which
+  throws without a Clerk provider. Ours is a stub that never reports a failure; keep it so
+  upstream callers (`HostedEmptyState`, `WelcomePage`, `ApproveAgentSurface`) stay unchanged.
+  In v0.1.11 `WelcomeWizard.tsx` became `WelcomePage.tsx` and `ApproveAgentSurface.tsx` and
+  `UseInAnotherAppDialog.tsx` were new `useAuth` callers; grep for `@clerk/react` after
+  every merge.
 - **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
   ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 
@@ -129,6 +140,10 @@ Clean merges still break. Seen so far:
   whole repo, so every fork file must meet them, not just the ones the merge touched. Run
   `vp lint` at the root and fix all errors in this PR. Kept effects get
   `// oxlint-disable-next-line t3code/no-unreasoned-state-sync -- <what it syncs and why>`.
+- Upstream makes helpers stricter. In v0.1.11 `decodeRelayJwt` became an Effect and rejects
+  malformed base64url, so fork callers needed `Effect.option` and our test JWTs needed
+  unpadded segments and a real base64url signature. `searchableSetting` became the
+  `useSearchableSetting()` hook, with `msg()` titles in the search table.
 - Upstream tests with hard-coded dates rot (v0.1.6: usage fixtures fell out of the 92-day
   window). If a test fails in a file the fork never touched, look for an upstream fix after
   the tag (`git log <tag>..upstream/main -- <file>`) and cherry-pick it with `-x`.
@@ -162,9 +177,17 @@ Known macOS-only failures, not merge-related:
   "trevize" are the same directory on a case-insensitive disk.
 - `build-desktop-artifact.test.ts` "skips the primary native probe for cross-architecture
   Windows payloads": fails on unmodified upstream too.
+- `pinnedRuntime.test.ts` "symlinked home" and `build-npm-launcher.test.ts` "publishes a
+  launcher…": macOS temp dirs resolve to `/private/var`; both fail on unmodified upstream too.
+- `*.browser.test.tsx` need Playwright browsers (`npx playwright install`); CI runs them.
 
 To check whether a failure is upstream's, copy the pristine files from the tag next to ours
 under a temporary name, run them, and delete them.
+
+The commit hook runs `vp lint` and knip on staged files, so the merge commit itself has to be
+lint-clean. If lint fails, knip reports failed too because the run is cancelled; rerun
+`vp run knip:check` on its own to see if it really fails. Run `vp run i18n:generate` in
+`apps/web` and `apps/mobile` after wrapping new copy.
 
 Run `vp lint` at the root; it must report 0 errors (warnings are upstream's). The commit
 hook runs `vp fmt`. After pushing, check `gh pr checks`; the PR isn't done until CI is green.
@@ -194,3 +217,9 @@ if a pattern changed. Prune entries that no longer apply.
   `UserMessageContent`), new `CommandPalette` imports, and the route tree. No breakage outside
   the conflicts. `DesktopLinuxUrlHandler` theme-icon tests also fail on macOS (case-only
   filename pair), same as unmodified upstream.
+- **v0.1.11 (2026-11-20).** Skipped v0.1.8–v0.1.10: 3,275 upstream commits, 40 conflicts, mostly
+  upstream's i18n pass over files we touched (see "i18n" above). New upstream features: issue
+  tracker integration (an issue right-panel tab beside our `space` tab) and preview tunnels to
+  an environment's loopback ports. The new `no-untranslated-copy` rule flagged ~280 strings in
+  fork-only files, wrapped in the merge commit. Desktop `StartupWMClass` now follows Electron's
+  WM class (`dev.trevize.Code`).
