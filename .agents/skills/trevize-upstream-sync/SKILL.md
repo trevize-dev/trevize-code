@@ -119,6 +119,13 @@ Pattern by pattern, the conflicts we have seen:
   In v0.1.11 `WelcomeWizard.tsx` became `WelcomePage.tsx` and `ApproveAgentSurface.tsx` and
   `UseInAnotherAppDialog.tsx` were new `useAuth` callers; grep for `@clerk/react` after
   every merge.
+- **CI runners** (`.github/workflows/ci.yml`). The fork has no Blacksmith runners, so ours
+  uses `ubuntu-24.04` and `macos-latest`. Keep our `runs-on` lines; a `blacksmith-*` runner
+  leaves the job queued until GitHub cancels it after 72 hours. Then run
+  `git grep -n 'runs-on: blacksmith' -- .github/workflows/ci.yml` to catch jobs upstream
+  added. Other workflows are disabled in the repository settings; a workflow file upstream
+  adds starts out enabled, so check `gh workflow list --repo trevize-dev/trevize-code` after
+  the merge.
 - **Mechanics.** With 30+ conflicts, a small script that resolves hunk N as
   ours/theirs/both/custom text beats hand edits. Keep it outside the worktree.
 
