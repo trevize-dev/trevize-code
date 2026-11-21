@@ -1,6 +1,19 @@
 {
   "fill": {
-    "solid": "display-p3:0.00000,0.00000,0.00000,1.00000"
+    "linear-gradient": [
+      "srgb:0.32157,0.47843,0.34510,1.00000",
+      "srgb:0.09020,0.24314,0.18824,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.2,
+        "y": 0
+      },
+      "stop": {
+        "x": 0.8,
+        "y": 1
+      }
+    }
   },
   "groups": [
     {
@@ -19,7 +32,7 @@
         "opacity": 0.5
       },
       "translucency": {
-        "enabled": true,
+        "enabled": false,
         "value": 0.5
       }
     }

@@ -20,7 +20,7 @@ const WORDMARK_FRACTION = 0.48;
 const COMPOSER_CANVAS_PT = 1024;
 const SVG_DENSITY = 300;
 const OUTPUT_DIRECTORY = "apps/mobile/assets";
-const PRODUCTION_BACKGROUND_COLOR = "#000000";
+const PRODUCTION_BACKGROUND_COLOR = "#315B42";
 
 export class AndroidIconRenderError extends Schema.TaggedError<AndroidIconRenderError>()(
   "AndroidIconRenderError",
