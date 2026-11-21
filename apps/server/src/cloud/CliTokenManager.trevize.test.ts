@@ -26,9 +26,9 @@ const provideTrevizeEnv = Effect.provide(
 const EXPIRES_AT_SECONDS = 2_000_000_000;
 const relayJwt = (id: string) =>
   [
-    btoa(JSON.stringify({ alg: "EdDSA" })),
+    btoa(JSON.stringify({ alg: "EdDSA" })).replace(/=+$/, ""),
     btoa(JSON.stringify({ sub: "user_123", exp: EXPIRES_AT_SECONDS, jti: id })).replace(/=+$/, ""),
-    "signature",
+    "c2lnbmF0dXJl",
   ].join(".");
 
 interface RecordedRequest {

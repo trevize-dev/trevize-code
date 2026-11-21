@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { CircleUserIcon, LogInIcon } from "lucide-react";
 
 import { useAuth } from "~/cloud/trevizeAccount"; // Trevize: Trevize sign-in, not Clerk
@@ -50,7 +51,9 @@ function ConfiguredT3ConnectSidebarSignIn() {
       <SidebarMenuItem>
         <SidebarMenuButton onClick={openAuthPrompt}>
           <LogInIcon />
-          <span>Sign in to T3 Connect</span>
+          <span>
+            <T>Sign in to T3 Connect</T>
+          </span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

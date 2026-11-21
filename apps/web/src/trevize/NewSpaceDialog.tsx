@@ -6,6 +6,7 @@ import {
 import { TrevizeRepositoryNotConnectedError, TrevizeSpaces } from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import { msg, T, useGT } from "gt-react";
 import * as Schema from "effect/Schema";
 import { useEffect, useId, useState, type ReactNode } from "react";
 
@@ -37,6 +38,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { Textarea } from "~/components/ui/textarea";
 import { toastManager } from "~/components/ui/toast";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { m } from "~/i18n/messages";
 import { getCustomModelOptionsByInstance } from "~/modelSelection";
 import { providerInstanceEntriesFor } from "~/providerInstances";
 import { useProjects } from "~/state/entities";
@@ -100,6 +102,7 @@ function OrchestratorModelField(props: {
   readonly disabled: boolean;
   readonly onChange: (value: OrchestratorModelChoice) => void;
 }) {
+  const gt = useGT();
   const settings = useEnvironmentSettings(props.environmentId);
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(props.environmentId)) ??
@@ -127,7 +130,7 @@ function OrchestratorModelField(props: {
   );
   if (activeInstanceId === undefined) return null;
   return (
-    <Field label="Orchestrator" hint="Agents choose their own model per task.">
+    <Field label={gt("Orchestrator")} hint={gt("Agents choose their own model per task.")}>
       <ProviderModelPicker
         environmentId={props.environmentId}
         disabled={props.disabled}
@@ -169,6 +172,7 @@ export function NewSpaceDialogHost() {
 }
 
 function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
+  const gt = useGT();
   const navigate = useNavigate();
   const create = useAtomCommand(Trevize.createSpace, { reportFailure: false });
   const projects = useCloudProjects();
@@ -214,12 +218,12 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
     const connectUrl = isRepositoryNotConnected(error) ? error.connectUrl : null;
     toastManager.add({
       type: "error",
-      title: "Could not create space",
-      description: error instanceof Error ? error.message : "Trevize did not create it.",
+      title: m(msg("Could not create space")),
+      description: error instanceof Error ? error.message : m(msg("Trevize did not create it.")),
       ...(connectUrl
         ? {
             actionProps: {
-              children: "Connect repository",
+              children: m(msg("Connect repository")),
               onClick: () => openTrevizePage(connectUrl),
             },
           }
@@ -236,10 +240,14 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
     >
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>New space</DialogTitle>
+          <DialogTitle>
+            <T>New space</T>
+          </DialogTitle>
           <DialogDescription>
-            A space has its own orchestrator chat, cloud environments and a shared{" "}
-            <code>/shared</code> disk. The orchestrator hands work to agents, one branch each.
+            <T>
+              A space has its own orchestrator chat, cloud environments and a shared{" "}
+              <code>/shared</code> disk. The orchestrator hands work to agents, one branch each.
+            </T>
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -251,38 +259,42 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
             }}
           >
             <fieldset disabled={saving} className="space-y-5">
-              <Field label="Name" htmlFor={nameId}>
+              <Field label={gt("Name")} htmlFor={nameId}>
                 <Input
                   id={nameId}
                   autoFocus
-                  placeholder="e.g. Billing revamp"
+                  placeholder={gt("e.g. Billing revamp")}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
               </Field>
 
               <Field
-                label="Projects"
+                label={gt("Projects")}
                 hint={
                   pickedPlacement?.status === "not-connected" ? (
                     <>
-                      No Trevize workspace has all of these projects connected.{" "}
+                      <T>No Trevize workspace has all of these projects connected.</T>{" "}
                       {pickedPlacement.connectUrl ? (
                         <ConnectLink url={pickedPlacement.connectUrl}>
-                          Connect them on Trevize
+                          <T>Connect them on Trevize</T>
                         </ConnectLink>
                       ) : null}
                     </>
                   ) : pickedPlacement?.workspaceName ? (
-                    `Runs in the ${pickedPlacement.workspaceName} workspace, which has these projects connected.`
+                    gt("Runs in the {workspace} workspace, which has these projects connected.", {
+                      workspace: pickedPlacement.workspaceName,
+                    })
                   ) : (
-                    "Cloned into every environment of the space. Projects without a GitHub remote can't run in the cloud and aren't listed."
+                    gt(
+                      "Cloned into every environment of the space. Projects without a GitHub remote can't run in the cloud and aren't listed.",
+                    )
                   )
                 }
               >
                 {projects.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    None of your projects has a GitHub remote.
+                    <T>None of your projects has a GitHub remote.</T>
                   </p>
                 ) : (
                   <ul className="max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border">
@@ -305,7 +317,9 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
                             />
                             <span className="min-w-0 flex-1 truncate">{project.title}</span>
                             {connectUrl ? (
-                              <ConnectLink url={connectUrl}>Connect on Trevize</ConnectLink>
+                              <ConnectLink url={connectUrl}>
+                                <T>Connect on Trevize</T>
+                              </ConnectLink>
                             ) : (
                               <span className="truncate text-xs text-muted-foreground">
                                 {project.slug}
@@ -320,17 +334,17 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
               </Field>
 
               <Field
-                label="Instructions"
+                label={gt("Instructions")}
                 htmlFor={instructionsId}
                 hint={
-                  <>
+                  <T>
                     Saved as <code>/shared/SPACE.md</code>, which every agent in the space reads.
-                  </>
+                  </T>
                 }
               >
                 <Textarea
                   id={instructionsId}
-                  placeholder="Conventions, constraints and goals for this space."
+                  placeholder={gt("Conventions, constraints and goals for this space.")}
                   value={instructions}
                   onChange={(event) => setInstructions(event.target.value)}
                 />
@@ -338,8 +352,8 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field
-                  label="Max parallel sandboxes"
-                  hint="1–32. Idle sandboxes sleep after 30 minutes."
+                  label={gt("Max parallel sandboxes")}
+                  hint={gt("1–32. Idle sandboxes sleep after 30 minutes.")}
                 >
                   <NumberField
                     min={1}
@@ -353,12 +367,12 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
                         ),
                       )
                     }
-                    aria-label="Max parallel sandboxes"
+                    aria-label={gt("Max parallel sandboxes")}
                   >
                     <NumberFieldGroup>
-                      <NumberFieldDecrement aria-label="Fewer sandboxes" />
+                      <NumberFieldDecrement aria-label={gt("Fewer sandboxes")} />
                       <NumberFieldInput />
-                      <NumberFieldIncrement aria-label="More sandboxes" />
+                      <NumberFieldIncrement aria-label={gt("More sandboxes")} />
                     </NumberFieldGroup>
                   </NumberField>
                 </Field>
@@ -379,11 +393,11 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
         </DialogPanel>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" size="sm" disabled={saving} />}>
-            Cancel
+            <T>Cancel</T>
           </DialogClose>
           <Button size="sm" disabled={!canCreate} onClick={() => void submit()}>
             {saving ? <Spinner size="sm" /> : null}
-            Create and open chat
+            <T>Create and open chat</T>
           </Button>
         </DialogFooter>
       </DialogPopup>

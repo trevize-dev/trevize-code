@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { msg, T } from "gt-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -10,6 +11,7 @@ import { useEffect, useRef } from "react";
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import { toastManager } from "~/components/ui/toast";
+import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "./commands";
 
@@ -34,8 +36,8 @@ function reportWakeFailure(result: AtomCommandResult<unknown, unknown>) {
   const error = squashAtomCommandFailure(result);
   toastManager.add({
     type: "error",
-    title: "Could not wake environment",
-    description: error instanceof Error ? error.message : "Trevize did not wake it.",
+    title: m(msg("Could not wake environment")),
+    description: error instanceof Error ? error.message : m(msg("Trevize did not wake it.")),
   });
 }
 
@@ -75,7 +77,7 @@ export function TrevizeWakeButton({
       onClick={() => void wake(environmentId).then(reportWakeFailure)}
     >
       {sleep === "waking" ? <Spinner size="sm" /> : null}
-      Wake
+      <T>Wake</T>
     </Button>
   );
 }

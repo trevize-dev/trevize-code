@@ -1,4 +1,5 @@
 import type { TrevizeDeviceSignIn } from "@t3tools/client-runtime/trevize";
+import { T, useGT } from "gt-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Linking, Text, View } from "react-native";
 
@@ -20,6 +21,7 @@ export function SettingsAuthRouteScreen() {
 function ConfiguredSettingsAuthRouteScreen() {
   const { isLoaded, isSignedIn } = useAuth();
   const signOut = useAtomCommand(Trevize.signOut);
+  const gt = useGT();
 
   if (!isLoaded) return <View collapsable={false} className="flex-1 bg-clerk-page" />;
   if (!isSignedIn) return <TrevizeSignIn />;
@@ -29,7 +31,7 @@ function ConfiguredSettingsAuthRouteScreen() {
       <T3ConnectProfilePage />
       <View className="border-t border-clerk-border px-6 py-4">
         <Button
-          label="Sign out of Trevize"
+          label={gt("Sign out of Trevize")}
           tone="danger"
           fullWidth
           onPress={() => {
@@ -49,6 +51,7 @@ function TrevizeSignIn() {
   const [pending, setPending] = useState<TrevizeDeviceSignIn | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const gt = useGT();
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops polling for approval when the screen goes away
   useEffect(() => () => abort.current?.abort(), []);
@@ -57,7 +60,7 @@ function TrevizeSignIn() {
     setError(null);
     const started = await startDeviceSignIn();
     if (started._tag !== "Success") {
-      setError("Could not reach Trevize. Check your connection and try again.");
+      setError(gt("Could not reach Trevize. Check your connection and try again."));
       return;
     }
     const signIn = started.value;
@@ -69,30 +72,32 @@ function TrevizeSignIn() {
     if (controller.signal.aborted) return;
     setPending(null);
     if (completed._tag === "Success") trevizeAccountSource.refresh();
-    else setError("Sign-in did not finish. Try again.");
+    else setError(gt("Sign-in did not finish. Try again."));
   };
 
   return (
     <View collapsable={false} className="flex-1 gap-4 bg-clerk-page px-6 py-8">
-      <Text className="text-lg font-semibold text-clerk-foreground">Sign in with Trevize</Text>
+      <Text className="text-lg font-semibold text-clerk-foreground">
+        <T>Sign in with Trevize</T>
+      </Text>
       <Text className="text-base text-clerk-foreground-muted">
-        T3 Connect uses your Trevize account to reach your environments from anywhere.
+        <T>T3 Connect uses your Trevize account to reach your environments from anywhere.</T>
       </Text>
       {pending ? (
         <>
           <Text className="text-base text-clerk-foreground-muted">
-            Approve this code in your browser:
+            <T>Approve this code in your browser:</T>
           </Text>
           <Text selectable className="text-2xl font-semibold tracking-widest text-clerk-foreground">
             {pending.userCode}
           </Text>
           <Button
-            label="Open Trevize"
+            label={gt("Open Trevize")}
             fullWidth
             onPress={() => void Linking.openURL(pending.verificationUrl).catch(() => undefined)}
           />
           <Button
-            label="Cancel"
+            label={gt("Cancel")}
             tone="text"
             fullWidth
             onPress={() => {
@@ -102,7 +107,7 @@ function TrevizeSignIn() {
           />
         </>
       ) : (
-        <Button label="Sign in" tone="primary" fullWidth onPress={() => void begin()} />
+        <Button label={gt("Sign in")} tone="primary" fullWidth onPress={() => void begin()} />
       )}
       {error ? <Text className="text-sm text-danger">{error}</Text> : null}
     </View>

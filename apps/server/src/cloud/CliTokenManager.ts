@@ -389,7 +389,9 @@ const mintTrevizeAccountToken = Effect.fn("cloud.cli_token.mint_trevize_account_
       Effect.fail(new CloudCliCredentialRefreshError({ cause, status: reason.response.status })),
     ),
   );
-  const expiresAtSeconds = decodeRelayJwt(body.token).exp ?? 0;
+  const claims = yield* decodeRelayJwt(body.token).pipe(Effect.option);
+  const exp = Option.isSome(claims) ? claims.value.exp : undefined;
+  const expiresAtSeconds = typeof exp === "number" ? exp : 0;
   return {
     accessToken: body.token,
     refreshToken: sessionToken,
@@ -445,10 +447,10 @@ const pollDeviceToken = Effect.fn("cloud.cli_token.poll_device_token")(function*
     const response = yield* HttpClientRequest.post(metadata.tokenEndpoint).pipe(
       deviceRequestBody(metadata, params),
       httpClient.execute,
-      Effect.asSome,
+      Effect.timeoutOption(OAUTH_REQUEST_TIMEOUT),
       Effect.catchIf(isTransportError, () => Effect.succeedNone),
     );
-    // Retry transport errors and 5xx while the device code is valid, backing off per RFC 8628 §3.5. Drain bodies to reuse connections.
+    // Retry transport errors, timeouts and 5xx while the device code is valid, backing off per RFC 8628 §3.5. Drain bodies to reuse connections.
     if (Option.isNone(response) || response.value.status >= 500) {
       if (Option.isSome(response)) yield* Effect.ignore(response.value.text);
       interval = Duration.sum(interval, DEVICE_AUTHORIZATION_SLOW_DOWN_INCREMENT);

@@ -259,10 +259,7 @@ export const fetchTrevizeRelayToken = Effect.fn("clientRuntime.trevize.fetchRela
 
 /** The account a relay token belongs to (its `sub`), or null when it is not a JWT. */
 export function trevizeRelayTokenSubject(token: string): string | null {
-  try {
-    const subject = decodeRelayJwt(token).sub;
-    return subject ? subject : null;
-  } catch {
-    return null;
-  }
+  const claims = Effect.runSync(Effect.option(decodeRelayJwt(token)));
+  const subject = Option.isSome(claims) ? claims.value.sub : undefined;
+  return typeof subject === "string" && subject ? subject : null;
 }

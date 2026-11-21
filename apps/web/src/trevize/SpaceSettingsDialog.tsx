@@ -4,6 +4,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { TrevizeSpaces } from "@t3tools/client-runtime/trevize";
 import { useNavigate } from "@tanstack/react-router";
+import { msg, T, useGT } from "gt-react";
 import { ArchiveIcon } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { create } from "zustand";
@@ -31,6 +32,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { Textarea } from "~/components/ui/textarea";
 import { toastManager } from "~/components/ui/toast";
 import { requestConfirmDialog } from "~/confirmDialog";
+import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "./commands";
 import { SpaceIconPicker } from "./SpaceIconPicker";
@@ -50,7 +52,7 @@ function reportFailure(title: string, error: unknown) {
   toastManager.add({
     type: "error",
     title,
-    description: error instanceof Error ? error.message : "Trevize did not answer.",
+    description: error instanceof Error ? error.message : m(msg("Trevize did not answer.")),
   });
 }
 
@@ -59,7 +61,12 @@ export function useArchiveSpace(): (space: Pick<Space, "id" | "name">) => Promis
   const navigate = useNavigate();
   const archive = useAtomCommand(Trevize.archiveSpace, { reportFailure: false });
   return async (space) => {
-    const message = `Archive "${space.name}"?\nIts orchestrator and agents stop showing here. Trevize keeps their history.`;
+    const message = m(
+      msg(
+        'Archive "{name}"?\nIts orchestrator and agents stop showing here. Trevize keeps their history.',
+        { name: space.name },
+      ),
+    );
     const confirmed =
       (await requestConfirmDialog(message, { variant: "destructive" })) ?? window.confirm(message);
     if (!confirmed) return false;
@@ -69,7 +76,7 @@ export function useArchiveSpace(): (space: Pick<Space, "id" | "name">) => Promis
       return true;
     }
     if (!isAtomCommandInterrupted(result)) {
-      reportFailure("Could not archive space", squashAtomCommandFailure(result));
+      reportFailure(m(msg("Could not archive space")), squashAtomCommandFailure(result));
     }
     return false;
   };
@@ -106,6 +113,7 @@ function Row(props: {
 
 function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: () => void }) {
   const { space, onClose } = props;
+  const gt = useGT();
   const update = useAtomCommand(Trevize.updateSpace, { reportFailure: false });
   const archiveSpace = useArchiveSpace();
   const [draft, setDraft] = useState(() => TrevizeSpaces.spaceSettingsDraft(space));
@@ -125,7 +133,7 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
       return;
     }
     if (isAtomCommandInterrupted(result)) return;
-    reportFailure("Could not save space settings", squashAtomCommandFailure(result));
+    reportFailure(m(msg("Could not save space settings")), squashAtomCommandFailure(result));
   };
 
   return (
@@ -137,7 +145,9 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
     >
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Space settings</DialogTitle>
+          <DialogTitle>
+            <T>Space settings</T>
+          </DialogTitle>
         </DialogHeader>
         <DialogPanel>
           <form
@@ -149,7 +159,7 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
           >
             <fieldset disabled={saving} className="space-y-6">
               <Row
-                label="Name and icon"
+                label={gt("Name and icon")}
                 htmlFor={nameId}
                 control={
                   <div className="flex items-center gap-2">
@@ -174,15 +184,19 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
               />
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor={instructionsId}>Instructions</Label>
+                <Label htmlFor={instructionsId}>
+                  <T>Instructions</T>
+                </Label>
                 <p className="text-xs text-muted-foreground">
-                  Saved as <code>/shared/SPACE.md</code>, which every agent in the space reads.
-                  Sandboxes pick up changes when they next start.
+                  <T>
+                    Saved as <code>/shared/SPACE.md</code>, which every agent in the space reads.
+                    Sandboxes pick up changes when they next start.
+                  </T>
                 </p>
                 <Textarea
                   id={instructionsId}
                   className="min-h-32"
-                  placeholder="Conventions, constraints and goals for this space."
+                  placeholder={gt("Conventions, constraints and goals for this space.")}
                   value={draft.instructions}
                   onChange={(event) => {
                     const instructions = event.currentTarget.value;
@@ -192,8 +206,8 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
               </div>
 
               <Row
-                label="Max parallel sandboxes"
-                description="1–32. Lowering it only blocks new sandboxes."
+                label={gt("Max parallel sandboxes")}
+                description={gt("1–32. Lowering it only blocks new sandboxes.")}
                 control={
                   <NumberField
                     min={1}
@@ -208,12 +222,12 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
                         ),
                       }))
                     }
-                    aria-label="Max parallel sandboxes"
+                    aria-label={gt("Max parallel sandboxes")}
                   >
                     <NumberFieldGroup>
-                      <NumberFieldDecrement aria-label="Fewer sandboxes" />
+                      <NumberFieldDecrement aria-label={gt("Fewer sandboxes")} />
                       <NumberFieldInput />
-                      <NumberFieldIncrement aria-label="More sandboxes" />
+                      <NumberFieldIncrement aria-label={gt("More sandboxes")} />
                     </NumberFieldGroup>
                   </NumberField>
                 }
@@ -225,10 +239,14 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
 
           <div className="mt-6 flex items-center justify-between gap-6 border-t border-border pt-6">
             <div className="min-w-0 space-y-0.5">
-              <div className="text-sm font-medium">Archive space</div>
+              <div className="text-sm font-medium">
+                <T>Archive space</T>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Hides the space and stops its sandboxes. Trevize keeps its history and{" "}
-                <code>/shared</code> files.
+                <T>
+                  Hides the space and stops its sandboxes. Trevize keeps its history and{" "}
+                  <code>/shared</code> files.
+                </T>
               </p>
             </div>
             <Button
@@ -242,17 +260,17 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
               }}
             >
               <ArchiveIcon />
-              Archive
+              <T>Archive</T>
             </Button>
           </div>
         </DialogPanel>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" size="sm" disabled={saving} />}>
-            Cancel
+            <T>Cancel</T>
           </DialogClose>
           <Button size="sm" disabled={!canSave} onClick={() => void save()}>
             {saving ? <Spinner size="sm" /> : null}
-            Save
+            <T>Save</T>
           </Button>
         </DialogFooter>
       </DialogPopup>

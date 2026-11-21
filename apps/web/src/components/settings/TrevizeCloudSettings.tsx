@@ -12,10 +12,12 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import type * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { PlusIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { m } from "~/i18n/messages";
 import { readLocalApi } from "~/localApi";
 import { useEnvironments } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -39,7 +41,7 @@ import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const TRANSITIONAL_STATUSES: ReadonlySet<TrevizeApi.TrevizeEnvironmentStatus> = new Set([
   "provisioning",
@@ -53,12 +55,12 @@ const STOPPABLE_STATUSES: ReadonlySet<TrevizeApi.TrevizeEnvironmentStatus> = new
 const STATUS_REFRESH_INTERVAL_MS = 5_000;
 
 const STATUS_LABELS: Record<TrevizeApi.TrevizeEnvironmentStatus, string> = {
-  provisioning: "Provisioning",
-  starting: "Starting",
-  running: "Running",
-  stopped: "Stopped",
-  failed: "Failed",
-  archived: "Archived",
+  provisioning: msg("Provisioning", { $context: "environment status" }),
+  starting: msg("Starting", { $context: "environment status" }),
+  running: msg("Running", { $context: "environment status" }),
+  stopped: msg("Stopped", { $context: "environment status" }),
+  failed: msg("Failed", { $context: "environment status" }),
+  archived: msg("Archived", { $context: "environment status" }),
 };
 
 function failureMessage(failure: { readonly cause: Cause.Cause<unknown> }, fallback: string) {
@@ -71,7 +73,7 @@ function reportFailure(result: AtomCommandResult<unknown, unknown>, title: strin
   toastManager.add({
     type: "error",
     title,
-    description: failureMessage(result, "Trevize did not complete the request."),
+    description: failureMessage(result, m(msg("Trevize did not complete the request."))),
   });
 }
 
@@ -109,6 +111,7 @@ export function TrevizeCloudSettings() {
   }, [loadApiKey]);
 
   const config = apiKey ? { baseUrl: settings.baseUrl, apiKey } : null;
+  const searchableSetting = useSearchableSetting();
 
   return (
     <SettingsSection
@@ -121,11 +124,11 @@ export function TrevizeCloudSettings() {
             onClick={() => {
               void signOut(config).then((result) => {
                 if (result._tag === "Success") setApiKey(null);
-                else reportFailure(result, "Could not sign out of Trevize");
+                else reportFailure(result, m(msg("Could not sign out of Trevize")));
               });
             }}
           >
-            Sign out
+            <T>Sign out</T>
           </Button>
         ) : null
       }
@@ -172,13 +175,16 @@ function TrevizeAutoConnectRow({
 }) {
   const sync = useAtomValue(Trevize.syncStateValueAtom);
   const syncNow = useAtomCommand(Trevize.syncNow, { reportFailure: false });
+  const gt = useGT();
   return (
     <SettingsRow
-      title="Automatically connect Trevize environments"
+      title={gt("Automatically connect Trevize environments")}
       description={
         sync.error
-          ? `Last sync failed: ${sync.error}`
-          : "Running environments of every workspace appear under Environments without clicking Connect. Archived ones are removed."
+          ? gt("Last sync failed: {error}", { error: sync.error })
+          : gt(
+              "Running environments of every workspace appear under Environments without clicking Connect. Archived ones are removed.",
+            )
       }
       control={
         <div className="flex items-center gap-2">
@@ -189,12 +195,12 @@ function TrevizeAutoConnectRow({
             onClick={() => void syncNow()}
           >
             {sync.syncing ? <Spinner size="sm" /> : null}
-            Sync now
+            <T>Sync now</T>
           </Button>
           <Switch
             size="sm"
             checked={autoConnect}
-            aria-label="Automatically connect Trevize environments"
+            aria-label={gt("Automatically connect Trevize environments")}
             onCheckedChange={(checked) => {
               onAutoConnectChange(checked);
               if (checked) void syncNow();
@@ -247,7 +253,7 @@ function TrevizeSignInForm({
     try {
       return TrevizeApi.normalizeTrevizeBaseUrl(urlDraft.trim() || Trevize.defaultTrevizeBaseUrl());
     } catch {
-      setError("Enter a valid Trevize URL.");
+      setError(m(msg("Enter a valid Trevize URL.")));
       return null;
     }
   };
@@ -265,7 +271,7 @@ function TrevizeSignInForm({
     if (started._tag !== "Success") {
       setDevice({ kind: "idle" });
       if (!isAtomCommandInterrupted(started)) {
-        setError(failureMessage(started, "Could not start signing in to Trevize."));
+        setError(failureMessage(started, m(msg("Could not start signing in to Trevize."))));
       }
       return;
     }
@@ -283,7 +289,7 @@ function TrevizeSignInForm({
     if (result._tag === "Success") {
       onSignedIn(result.value.config, result.value.workspaces);
     } else if (!isAtomCommandInterrupted(result)) {
-      setError(failureMessage(result, "Could not sign in to Trevize."));
+      setError(failureMessage(result, m(msg("Could not sign in to Trevize."))));
     }
   };
 
@@ -305,7 +311,7 @@ function TrevizeSignInForm({
       setKeyDraft("");
       onSignedIn(config, result.value);
     } else if (!isAtomCommandInterrupted(result)) {
-      setError(failureMessage(result, "Could not sign in to Trevize."));
+      setError(failureMessage(result, m(msg("Could not sign in to Trevize."))));
     }
   };
 
@@ -314,7 +320,7 @@ function TrevizeSignInForm({
       <div className={ITEM_ROW_CLASSNAME}>
         <div className="grid gap-3">
           <p className="text-xs text-muted-foreground">
-            Approve this code in Trevize to finish signing in.
+            <T>Approve this code in Trevize to finish signing in.</T>
           </p>
           <div className="flex items-center gap-3">
             <span className="font-mono text-lg tracking-widest">{device.signIn.userCode}</span>
@@ -322,10 +328,10 @@ function TrevizeSignInForm({
           </div>
           <div className="flex items-center justify-end gap-2">
             <Button size="xs" variant="ghost-muted" onClick={cancelDeviceSignIn}>
-              Cancel
+              <T>Cancel</T>
             </Button>
             <Button size="xs" variant="outline" onClick={() => openApproval(device.signIn)}>
-              Open Trevize
+              <T>Open Trevize</T>
             </Button>
           </div>
         </div>
@@ -344,12 +350,14 @@ function TrevizeSignInForm({
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Run environments in Trevize cloud sandboxes and connect to them from here.
+          <T>Run environments in Trevize cloud sandboxes and connect to them from here.</T>
         </p>
         <fieldset disabled={submitting || device.kind === "starting"} className="contents">
           <div className={useApiKey ? "grid gap-3 sm:grid-cols-[16rem_1fr]" : "grid gap-3"}>
             <div className="grid gap-1.5">
-              <Label htmlFor="trevize-base-url">Trevize URL</Label>
+              <Label htmlFor="trevize-base-url">
+                <T>Trevize URL</T>
+              </Label>
               <Input
                 id="trevize-base-url"
                 size="sm"
@@ -361,7 +369,9 @@ function TrevizeSignInForm({
             </div>
             {useApiKey ? (
               <div className="grid gap-1.5">
-                <Label htmlFor="trevize-api-key">API key</Label>
+                <Label htmlFor="trevize-api-key">
+                  <T>API key</T>
+                </Label>
                 <Input
                   id="trevize-api-key"
                   size="sm"
@@ -386,11 +396,11 @@ function TrevizeSignInForm({
                   setError(null);
                 }}
               >
-                {useApiKey ? "Sign in with browser" : "Use an API key"}
+                {useApiKey ? <T>Sign in with browser</T> : <T>Use an API key</T>}
               </Button>
               <Button type="submit" size="xs" disabled={useApiKey && !keyDraft.trim()}>
                 {submitting || device.kind === "starting" ? <Spinner size="sm" /> : null}
-                {useApiKey ? "Sign in" : "Sign in with Trevize"}
+                {useApiKey ? <T>Sign in</T> : <T>Sign in with Trevize</T>}
               </Button>
             </div>
           </div>
@@ -445,7 +455,7 @@ function TrevizeWorkspaceEnvironments({
         setWorkspaces(result.value);
         selectFallbackWorkspace(result.value);
       } else if (!isAtomCommandInterrupted(result)) {
-        setLoadError(failureMessage(result, "Could not load Trevize workspaces."));
+        setLoadError(failureMessage(result, m(msg("Could not load Trevize workspaces."))));
       }
     });
     return () => {
@@ -463,7 +473,7 @@ function TrevizeWorkspaceEnvironments({
         });
         setLoadError(null);
       } else if (!isAtomCommandInterrupted(result)) {
-        setLoadError(failureMessage(result, "Could not load Trevize environments."));
+        setLoadError(failureMessage(result, m(msg("Could not load Trevize environments."))));
       }
     });
   };
@@ -502,11 +512,15 @@ function TrevizeWorkspaceEnvironments({
       if (result._tag === "Success") {
         toastManager.add({
           type: "success",
-          title: "Environment connected",
-          description: `${environmentTitle(environment)} is saved and will reconnect on app startup.`,
+          title: m(msg("Environment connected")),
+          description: m(
+            msg("{environment} is saved and will reconnect on app startup.", {
+              environment: environmentTitle(environment),
+            }),
+          ),
         });
       } else {
-        reportFailure(result, "Could not connect environment");
+        reportFailure(result, m(msg("Could not connect environment")));
       }
       await refresh();
     });
@@ -515,25 +529,30 @@ function TrevizeWorkspaceEnvironments({
     withBusy(environment.id, async () => {
       reportFailure(
         await stopEnvironment({ config, environmentId: environment.id }),
-        "Could not stop environment",
+        m(msg("Could not stop environment")),
       );
       await refresh();
     });
 
   const wake = (environment: TrevizeApi.TrevizeEnvironment, savedId: EnvironmentId) =>
     withBusy(environment.id, async () => {
-      reportFailure(await wakeEnvironment(savedId), "Could not wake environment");
+      reportFailure(await wakeEnvironment(savedId), m(msg("Could not wake environment")));
       await refresh();
     });
 
   const savedEntries = savedEnvironments.map((environment) => environment.entry);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
+  const gt = useGT();
+  const messages = useMessages();
 
   return (
     <>
       <SettingsRow
-        title="Default workspace"
-        description={`Cloud sessions and spaces run in the workspace that has their repositories connected, this one first. Signed in to ${new URL(config.baseUrl).host}.`}
+        title={gt("Default workspace")}
+        description={gt(
+          "Cloud sessions and spaces run in the workspace that has their repositories connected, this one first. Signed in to {host}.",
+          { host: new URL(config.baseUrl).host },
+        )}
         control={
           <div className="flex items-center gap-2">
             <Select
@@ -545,9 +564,9 @@ function TrevizeWorkspaceEnvironments({
               <SelectTrigger
                 size="sm"
                 className="w-full sm:w-56"
-                aria-label="Default Trevize workspace"
+                aria-label={gt("Default Trevize workspace")}
               >
-                <SelectValue>{selectedWorkspace?.name ?? "Select a workspace"}</SelectValue>
+                <SelectValue>{selectedWorkspace?.name ?? gt("Select a workspace")}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 {workspaces.map((workspace) => (
@@ -564,17 +583,17 @@ function TrevizeWorkspaceEnvironments({
               onClick={() => setCreateOpen(true)}
             >
               <PlusIcon className="size-3" />
-              New environment
+              <T>New environment</T>
             </Button>
           </div>
         }
       />
       {loadError ? (
-        <SettingsRow title="Could not reach Trevize" description={loadError} />
+        <SettingsRow title={gt("Could not reach Trevize")} description={loadError} />
       ) : environments === null ? null : environments.length === 0 ? (
         <SettingsRow
-          title="No environments"
-          description="Create an environment to start a cloud sandbox with your repositories."
+          title={gt("No environments")}
+          description={gt("Create an environment to start a cloud sandbox with your repositories.")}
         />
       ) : (
         environments.map((environment) => {
@@ -585,8 +604,10 @@ function TrevizeWorkspaceEnvironments({
           const busy =
             busyIds.has(environment.id) || (savedId !== null && sync.waking.has(savedId));
           const statusText = [
-            sleeping ? "Sleeping" : STATUS_LABELS[environment.status],
-            saved ? "Saved on this device" : null,
+            sleeping
+              ? gt("Sleeping", { $context: "environment status" })
+              : messages(STATUS_LABELS[environment.status]),
+            saved ? gt("Saved on this device") : null,
             environment.error ?? null,
           ]
             .filter(Boolean)
@@ -606,7 +627,7 @@ function TrevizeWorkspaceEnvironments({
                       disabled={busy}
                       onClick={() => void stop(environment)}
                     >
-                      Stop
+                      <T context="stop the environment">Stop</T>
                     </Button>
                   ) : null}
                   {sleeping ? (
@@ -616,7 +637,7 @@ function TrevizeWorkspaceEnvironments({
                       onClick={() => void wake(environment, savedId)}
                     >
                       {busy ? <Spinner size="sm" /> : null}
-                      Wake
+                      <T context="wake the environment">Wake</T>
                     </Button>
                   ) : (
                     <Button
@@ -626,7 +647,7 @@ function TrevizeWorkspaceEnvironments({
                       onClick={() => void connect(environment)}
                     >
                       {busy ? <Spinner size="sm" /> : null}
-                      {saved ? "Reconnect" : "Connect"}
+                      {saved ? <T>Reconnect</T> : <T context="connect the environment">Connect</T>}
                     </Button>
                   )}
                 </div>
@@ -663,6 +684,7 @@ function NewTrevizeEnvironmentDialog({
 }) {
   const listRepositories = useAtomCommand(Trevize.listRepositories, { reportFailure: false });
   const createEnvironment = useAtomCommand(Trevize.createEnvironment, { reportFailure: false });
+  const gt = useGT();
   const [loaded, setLoaded] = useState<{
     readonly workspaceId: string;
     readonly repositories: ReadonlyArray<TrevizeApi.TrevizeRepository>;
@@ -681,7 +703,7 @@ function NewTrevizeEnvironmentDialog({
       if (!active) return;
       if (result._tag === "Success") setLoaded({ workspaceId, repositories: result.value });
       else if (!isAtomCommandInterrupted(result)) {
-        setError(failureMessage(result, "Could not load repositories."));
+        setError(failureMessage(result, m(msg("Could not load repositories."))));
       }
     });
     return () => {
@@ -704,11 +726,15 @@ function NewTrevizeEnvironmentDialog({
       onCreated();
       toastManager.add({
         type: "success",
-        title: "Environment created",
-        description: `${environmentTitle(result.value)} is starting. Connect when it is ready.`,
+        title: m(msg("Environment created")),
+        description: m(
+          msg("{environment} is starting. Connect when it is ready.", {
+            environment: environmentTitle(result.value),
+          }),
+        ),
       });
     } else if (!isAtomCommandInterrupted(result)) {
-      setError(failureMessage(result, "Could not create the environment."));
+      setError(failureMessage(result, m(msg("Could not create the environment."))));
     }
   };
 
@@ -725,33 +751,42 @@ function NewTrevizeEnvironmentDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogPopup className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Trevize environment</DialogTitle>
+          <DialogTitle>
+            <T>New Trevize environment</T>
+          </DialogTitle>
           <DialogDescription>
-            Trevize starts a cloud sandbox with the selected repositories, each added as a project.
+            <T>
+              Trevize starts a cloud sandbox with the selected repositories, each added as a
+              project.
+            </T>
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
           <div className="grid gap-4">
             <div className="grid gap-1.5">
-              <Label htmlFor="trevize-environment-title">Title</Label>
+              <Label htmlFor="trevize-environment-title">
+                <T>Title</T>
+              </Label>
               <Input
                 id="trevize-environment-title"
                 size="sm"
                 autoComplete="off"
-                placeholder="Optional"
+                placeholder={gt("Optional")}
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
               />
             </div>
             <div className="grid gap-2">
-              <Label>Repositories</Label>
+              <Label>
+                <T>Repositories</T>
+              </Label>
               {repositories === null ? (
                 error ? null : (
                   <Spinner size="sm" />
                 )
               ) : repositories.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  No repositories. Connect GitHub to this workspace in Trevize first.
+                  <T>No repositories. Connect GitHub to this workspace in Trevize first.</T>
                 </p>
               ) : (
                 repositories.map((repository) => (
@@ -777,7 +812,7 @@ function NewTrevizeEnvironmentDialog({
         </DialogPanel>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => handleOpenChange(false)}>
-            Cancel
+            <T>Cancel</T>
           </Button>
           <Button
             size="sm"
@@ -785,7 +820,7 @@ function NewTrevizeEnvironmentDialog({
             onClick={() => void create()}
           >
             {creating ? <Spinner size="sm" /> : null}
-            Create
+            <T>Create</T>
           </Button>
         </DialogFooter>
       </DialogPopup>

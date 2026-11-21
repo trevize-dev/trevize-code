@@ -5,6 +5,7 @@ import {
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { useNavigate } from "@tanstack/react-router";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { ArchiveIcon, MoreHorizontalIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
@@ -28,6 +29,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { isElectron } from "~/env";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { m } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useThreadShell } from "~/state/entities";
@@ -60,6 +62,7 @@ const spacePanelOpened = new Set<string>();
  * orchestrator.
  */
 export function SpaceView({ spaceId, tab }: { readonly spaceId: string; readonly tab?: string }) {
+  const gt = useGT();
   const state = useSpaces();
   const space = state.spaces.find((candidate) => candidate.id === spaceId) ?? null;
   if (space === null) {
@@ -67,11 +70,13 @@ export function SpaceView({ spaceId, tab }: { readonly spaceId: string; readonly
       <SpacePage titleRow={null}>
         {state.loaded ? (
           <SpaceEmpty
-            title="Space unavailable"
-            description="This space was archived, or Trevize Cloud doesn't list it for your account."
+            title={gt("Space unavailable")}
+            description={gt(
+              "This space was archived, or Trevize Cloud doesn't list it for your account.",
+            )}
           />
         ) : (
-          <SpaceEmpty title="Loading space" busy />
+          <SpaceEmpty title={gt("Loading space")} busy />
         )}
       </SpacePage>
     );
@@ -235,7 +240,7 @@ function useConnectSpaceThread(thread: TrevizeApi.TrevizeThread | null, needed: 
       const cause = squashAtomCommandFailure(result);
       setError({
         threadId: thread.id,
-        message: cause instanceof Error ? cause.message : "Trevize could not connect it.",
+        message: cause instanceof Error ? cause.message : m(msg("Trevize could not connect it.")),
       });
     });
   }, [connect, needed, thread]);
@@ -251,14 +256,15 @@ function SpaceThreadPending(props: {
   readonly connectError: string | null;
   readonly onBack: () => void;
 }) {
+  const gt = useGT();
   if (props.tab !== null && props.thread === null) {
     return (
       <SpaceEmpty
-        title="Agent not found"
-        description="This agent is no longer listed in the space."
+        title={gt("Agent not found")}
+        description={gt("This agent is no longer listed in the space.")}
         action={
           <Button size="sm" variant="outline" onClick={props.onBack}>
-            Back to the space chat
+            <T>Back to the space chat</T>
           </Button>
         }
       />
@@ -269,28 +275,32 @@ function SpaceThreadPending(props: {
     const failed = TrevizeSpaces.spaceEnvironmentFailed(props.space.id, props.state.environments);
     return failed ? (
       <SpaceEmpty
-        title="The space's sandbox didn't start"
-        description="Reconnect it under Settings → Connections. The orchestrator starts once it runs."
+        title={gt("The space's sandbox didn't start")}
+        description={gt(
+          "Reconnect it under Settings → Connections. The orchestrator starts once it runs.",
+        )}
       />
     ) : (
       <SpaceEmpty
         busy
-        title="Starting the orchestrator"
-        description="The space's first sandbox is starting. This can take a few minutes."
+        title={gt("Starting the orchestrator")}
+        description={gt("The space's first sandbox is starting. This can take a few minutes.")}
       />
     );
   }
   if (props.target?._tag === "Unavailable") {
-    return <SpaceEmpty title="Can't open this thread" description={props.target.reason} />;
+    return <SpaceEmpty title={gt("Can't open this thread")} description={props.target.reason} />;
   }
   if (props.connectError !== null) {
-    return <SpaceEmpty title="Couldn't connect" description={props.connectError} />;
+    return <SpaceEmpty title={gt("Couldn't connect")} description={props.connectError} />;
   }
   return (
     <SpaceEmpty
       busy
-      title="Opening"
-      description="Connecting to the space's environment. A sleeping sandbox takes a minute to wake."
+      title={gt("Opening", { $context: "loading state, opening a thread" })}
+      description={gt(
+        "Connecting to the space's environment. A sleeping sandbox takes a minute to wake.",
+      )}
     />
   );
 }
@@ -314,6 +324,8 @@ function SpaceTabBar(props: {
   /** Null while no project of the space is known on this device. */
   readonly onNewAgent: (() => void) | null;
 }) {
+  const gt = useGT();
+  const resolve = useMessages();
   const tabs = props.openTabs.flatMap((id) => {
     const thread = props.threads.find((candidate) => candidate.id === id);
     return thread && thread.id !== props.space.orchestratorThreadId ? [thread] : [];
@@ -333,14 +345,14 @@ function SpaceTabBar(props: {
         </button>
         {tabs.map((thread) => {
           const active = props.active === thread.id;
-          const title = spaceThreadTitle(thread);
+          const title = spaceThreadTitle(thread, resolve);
           return (
             <div
               key={thread.id}
               className={cn(TAB_CLASS, "group/tab max-w-52 pr-1 pl-1.5", tabTone(active))}
             >
               <PanelTabCloseButton
-                label={`Close ${title}`}
+                label={gt("Close {title}", { title })}
                 onClick={() => props.onClose(thread.id)}
               >
                 <ThreadStatusDot thread={thread} />
@@ -370,11 +382,15 @@ function AgentPicker(props: {
   readonly onOpen: (thread: TrevizeApi.TrevizeThread) => void;
   readonly onNewAgent: (() => void) | null;
 }) {
+  const gt = useGT();
+  const resolve = useMessages();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const matches = needle
-    ? props.agents.filter((agent) => spaceThreadTitle(agent).toLowerCase().includes(needle))
+    ? props.agents.filter((agent) =>
+        spaceThreadTitle(agent, resolve).toLowerCase().includes(needle),
+      )
     : props.agents;
   return (
     <Popover
@@ -385,7 +401,7 @@ function AgentPicker(props: {
       }}
     >
       <PopoverTrigger
-        render={<Button size="icon-xs" variant="ghost-muted" aria-label="Open an agent" />}
+        render={<Button size="icon-xs" variant="ghost-muted" aria-label={gt("Open an agent")} />}
       >
         <PlusIcon />
       </PopoverTrigger>
@@ -395,15 +411,21 @@ function AgentPicker(props: {
             autoFocus
             size="sm"
             type="search"
-            placeholder="Search agents"
-            aria-label="Search agents"
+            placeholder={gt("Search agents")}
+            aria-label={gt("Search agents")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div className="px-1 text-xs font-medium text-muted-foreground">Agents</div>
+          <div className="px-1 text-xs font-medium text-muted-foreground">
+            <T>Agents</T>
+          </div>
           {matches.length === 0 ? (
             <p className="px-1 text-sm text-muted-foreground">
-              {props.agents.length === 0 ? "No agents in this space yet." : "No matching agents."}
+              {props.agents.length === 0 ? (
+                <T>No agents in this space yet.</T>
+              ) : (
+                <T>No matching agents.</T>
+              )}
             </p>
           ) : (
             <ul className="max-h-72 overflow-y-auto">
@@ -420,7 +442,7 @@ function AgentPicker(props: {
                   >
                     <ThreadStatusDot thread={agent} />
                     <span className="min-w-0 flex-1 truncate text-left">
-                      {spaceThreadTitle(agent)}
+                      {spaceThreadTitle(agent, resolve)}
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                       {compactAge(agent.updatedAt ?? agent.createdAt)}
@@ -441,7 +463,7 @@ function AgentPicker(props: {
               }}
             >
               <PlusIcon />
-              New agent
+              <T>New agent</T>
             </Button>
           ) : null}
         </div>
@@ -451,12 +473,17 @@ function AgentPicker(props: {
 }
 
 function SpaceMenu({ space }: { readonly space: Space }) {
+  const gt = useGT();
   const archive = useArchiveSpace();
   return (
     <Menu>
       <MenuTrigger
         render={
-          <Button size="icon-xs" variant="ghost-muted" aria-label={`${space.name} actions`} />
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            aria-label={gt("{name} actions", { name: space.name })}
+          />
         }
       >
         <MoreHorizontalIcon />
@@ -464,11 +491,11 @@ function SpaceMenu({ space }: { readonly space: Space }) {
       <MenuPopup align="end">
         <MenuItem onClick={() => openSpaceSettings(space.id)}>
           <SettingsIcon />
-          Space settings…
+          <T>Space settings…</T>
         </MenuItem>
         <MenuItem variant="destructive" onClick={() => void archive(space)}>
           <ArchiveIcon />
-          Archive space…
+          <T>Archive space…</T>
         </MenuItem>
       </MenuPopup>
     </Menu>
