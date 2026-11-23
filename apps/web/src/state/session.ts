@@ -78,6 +78,22 @@ export function useEnvironmentsWithScope(
   );
 }
 
+/** Whether the environment's session is known and lacks `scope`; false while it loads. */
+export function useEnvironmentScopeDenied(
+  environmentId: EnvironmentId | null,
+  scope: AuthEnvironmentScope,
+): boolean {
+  return useAtomValue(
+    environmentId === null
+      ? EMPTY_SESSION_STATE_ATOM
+      : environmentSession.sessionStateAtom(environmentId),
+    (result) => {
+      const session = AsyncResult.getOrElse(result, () => null);
+      return session !== null && !sessionGrantsScope(session, scope);
+    },
+  );
+}
+
 export function readEnvironmentScope(
   environmentId: EnvironmentId,
   scope: AuthEnvironmentScope,

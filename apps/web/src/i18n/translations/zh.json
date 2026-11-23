@@ -3149,12 +3149,11 @@
   "a04783b448042f1a": "Completed",
   "f736bd42b5b52919": "Running",
   "c2a1a89542ebde4e": "Pending",
-  "51a6253a30722d04": "{count} more",
   "fc08c013abe06d65": "Files in {path}",
+  "51a6253a30722d04": "{count} more",
   "d01b4e0c6eb73eed": "刷新文件",
   "fb976abe5b22bbe6": "Tasks",
   "adfac3e40001bb46": "No tasks yet",
-  "9f90d63bcad3e2a7": "Manage",
   "f8ca33ee8647b962": [
     "Files in ",
     {
@@ -3163,6 +3162,8 @@
       "v": "v"
     }
   ],
+  "242f842bcd6403c6": "Files are visible to members.",
+  "9f90d63bcad3e2a7": "Manage",
   "c28c688f1d80db22": "No files yet",
   "d9b5c99a4577c314": "Archive \"{name}\"?\nIts orchestrator and agents stop showing here. Trevize keeps their history.",
   "e848d9bd15d3f98b": "Could not archive space",
@@ -4190,6 +4191,10 @@
   "de5c52c3f47ff209": "由 T3 Code 发送",
   "ded43a280aed9f20": "打开会话",
   "7635dd64bbbe10ec": "打开自动化",
+  "db85b90036f11f0c": "Files aren't available",
+  "013c1cfe812939c2": "This connection can't read files or diffs in this environment.",
+  "6b8f45d94284d0ce": "Terminals aren't available",
+  "0e57bad3eb445324": "This connection can't open or watch terminals in this environment.",
   "6327e4ffa0f2366d": "PR 不可用",
   "90062342f04966ff": "请更新此环境的 T3 Code 服务器后再浏览 pull request。",
   "5e7157db126f1641": "issue 不可用",

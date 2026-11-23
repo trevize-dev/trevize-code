@@ -651,8 +651,9 @@ describe("space members", () => {
     Effect.gen(function* () {
       const calls: Array<Call> = [];
       const layer = layerTrevizeHttp(calls, [
-        () => Response.json({ members: [memberJson] }),
-        () => Response.json({ ...memberJson, role: "viewer" }),
+        () =>
+          Response.json({ members: [memberJson, { ...memberJson, userId: "usr_1", self: true }] }),
+        () => Response.json({ ...memberJson, role: "viewer", self: false }),
         () => Response.json({ removed: true }),
         () =>
           Response.json({
@@ -674,8 +675,12 @@ describe("space members", () => {
         Effect.provide(layer),
       );
 
-      expect(members.map((member) => member.role)).toEqual(["member"]);
-      expect(changed.role).toBe("viewer");
+      // Older servers send no `self`; it stays absent so the client can fall back.
+      expect(members.map(({ userId, self }) => ({ userId, self }))).toEqual([
+        { userId: "usr_2", self: undefined },
+        { userId: "usr_1", self: true },
+      ]);
+      expect([changed.role, changed.self]).toEqual(["viewer", false]);
       expect(removed).toBe(true);
       expect(workspace.map((member) => member.email)).toEqual(["bo@example.test"]);
       expect(

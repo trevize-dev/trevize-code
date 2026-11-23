@@ -212,18 +212,37 @@ export function isLastSpaceOwner(
   return owners.length === 1 && owners[0]?.userId === userId;
 }
 
+type SelfCheck = Pick<TrevizeSpaceMember, "userId" | "self">;
+
 /**
- * Whether `userId` can leave: they are listed in a members-only space and are
- * not its last owner. In a workspace-wide space leaving would change nothing,
- * since everyone in the workspace is a member anyway.
+ * Whether a listed member is the caller: the server's `self` flag, else (older
+ * servers) a match with `fallbackUserId`, the signed-in account's id if known.
+ */
+export function isSelfSpaceMember(member: SelfCheck, fallbackUserId: string | null): boolean {
+  return member.self ?? (fallbackUserId !== null && member.userId === fallbackUserId);
+}
+
+/** The caller's own row, or null when they aren't listed (or can't be told apart). */
+export function selfSpaceMember<M extends SelfCheck>(
+  members: ReadonlyArray<M>,
+  fallbackUserId: string | null,
+): M | null {
+  return members.find((member) => isSelfSpaceMember(member, fallbackUserId)) ?? null;
+}
+
+/**
+ * Whether the caller can leave: they are listed in a members-only space and
+ * are not its last owner. In a workspace-wide space leaving would leave them a
+ * member anyway (and a viewer would gain access), so it isn't offered there.
  */
 export function canLeaveSpace(
   space: Pick<TrevizeSpace, "visibility">,
-  members: ReadonlyArray<Pick<TrevizeSpaceMember, "userId" | "role">>,
-  userId: string | null,
+  members: ReadonlyArray<SelfCheck & Pick<TrevizeSpaceMember, "role">>,
+  fallbackUserId: string | null,
 ): boolean {
-  if (userId === null || spaceVisibility(space) !== "private") return false;
-  return members.some((member) => member.userId === userId) && !isLastSpaceOwner(members, userId);
+  if (spaceVisibility(space) !== "private") return false;
+  const self = selfSpaceMember(members, fallbackUserId);
+  return self !== null && !isLastSpaceOwner(members, self.userId);
 }
 
 /** Workspace members not yet listed in the space, matching `query` by name or email. */

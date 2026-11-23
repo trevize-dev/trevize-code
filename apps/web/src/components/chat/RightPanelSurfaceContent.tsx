@@ -1,40 +1,52 @@
-import { useGT } from "gt-react";
-import type {
-  EditorId,
-  EnvironmentId,
-  IssueTrackerKind,
-  PreviewAnnotationPayload,
-  ProjectId,
-  ResolvedKeybindingsConfig,
-  ScopedThreadRef,
-  ThreadLinkedPullRequest,
-  ThreadPullRequestLink,
-} from "@t3tools/contracts";
+import { lazy, Suspense, type ReactNode } from "react";
+
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { lazy, Suspense } from "react";
-import SideChatPane from "./SideChatPane";
-import { SpacePanel } from "../../trevize/SpacePanel";
+import {
+  AuthFilesystemReadScope,
+  AuthTerminalOperateScope,
+  AuthTerminalReadScope,
+  type EditorId,
+  type EnvironmentId,
+  type IssueTrackerKind,
+  type PreviewAnnotationPayload,
+  type ProjectId,
+  type ResolvedKeybindingsConfig,
+  type ScopedThreadRef,
+  type ThreadLinkedPullRequest,
+  type ThreadPullRequestLink,
+} from "@t3tools/contracts";
+import { useGT } from "gt-react";
+import { FolderLockIcon, SquareTerminalIcon } from "lucide-react";
+
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
 import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
+import { useEnvironmentScopeDenied } from "../../state/session";
+import { SpacePanel } from "../../trevize/SpacePanel";
+import { IssueDetailPanel } from "../issue/IssueDetailPanel";
 import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
 } from "../PersistentThreadTerminals";
-import { IssueDetailPanel } from "../issue/IssueDetailPanel";
 import { pullRequestPanelContext } from "../pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
+import SideChatPane from "./SideChatPane";
 
 const PreviewPanel = lazy(() =>
-  import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
+  import("../preview/PreviewPanel").then((module) => ({
+    default: module.PreviewPanel,
+  })),
 );
 const DiffPanel = lazy(() => import("../DiffPanel"));
 const DevicePanel = lazy(() =>
-  import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
+  import("../device/DevicePanel").then((module) => ({
+    default: module.DevicePanel,
+  })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
 
@@ -87,7 +99,39 @@ export function RightPanelSurfaceContent(props: {
 }) {
   const { surface, threadRef, visible, onCloseSurface } = props;
   const gt = useGT();
+  // Read-only pairings (e.g. a Trevize space viewer) may not read files, which diffs need too,
+  // nor terminals; persisted or linked surfaces then explain that instead of failing.
+  const filesDenied = useEnvironmentScopeDenied(props.environmentId, AuthFilesystemReadScope);
+  const terminalReadDenied = useEnvironmentScopeDenied(props.environmentId, AuthTerminalReadScope);
+  const terminalOperateDenied = useEnvironmentScopeDenied(
+    props.environmentId,
+    AuthTerminalOperateScope,
+  );
+  const terminalDenied = terminalReadDenied && terminalOperateDenied;
   if (surface === null) return null;
+  if (
+    filesDenied &&
+    (surface.kind === "diff" ||
+      surface.kind === "files" ||
+      (surface.kind === "file" && !surface.attachment))
+  ) {
+    return (
+      <SurfaceUnavailable
+        icon={<FolderLockIcon />}
+        title={gt("Files aren't available")}
+        description={gt("This connection can't read files or diffs in this environment.")}
+      />
+    );
+  }
+  if (terminalDenied && surface.kind === "terminal") {
+    return (
+      <SurfaceUnavailable
+        icon={<SquareTerminalIcon />}
+        title={gt("Terminals aren't available")}
+        description={gt("This connection can't open or watch terminals in this environment.")}
+      />
+    );
+  }
   switch (surface.kind) {
     case "preview":
       return (
@@ -287,4 +331,20 @@ export function RightPanelSurfaceContent(props: {
       );
     }
   }
+}
+
+function SurfaceUnavailable(props: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly description: string;
+}) {
+  return (
+    <Empty>
+      <EmptyMedia variant="icon">{props.icon}</EmptyMedia>
+      <EmptyHeader>
+        <EmptyTitle>{props.title}</EmptyTitle>
+        <EmptyDescription>{props.description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
 }

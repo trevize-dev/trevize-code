@@ -142,6 +142,8 @@ export const TrevizeSpaceMember = Schema.Struct({
   role: TrevizeSpaceRole,
   addedByUserId: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
+  /** True for the caller; absent on servers from before it, where `isSelfSpaceMember` falls back. */
+  self: Schema.optional(Schema.Boolean),
 });
 export type TrevizeSpaceMember = typeof TrevizeSpaceMember.Type;
 

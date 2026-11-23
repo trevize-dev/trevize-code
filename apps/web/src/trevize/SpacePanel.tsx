@@ -146,12 +146,29 @@ export function SpacePanel(props: {
         )}
       </section>
 
-      <SharedFiles
-        key={filesEnvironmentId}
-        environmentId={filesEnvironmentId}
-        changedAt={projection?.updatedAt ?? null}
-        onOpenFile={props.onOpenFile}
-      />
+      {space && !TrevizeSpaces.canOperateSpace(space) ? (
+        // Viewer pairings can't read files, so the listing would only fail.
+        <section
+          aria-label={gt("Files in {path}", { path: SPACE_SHARED_ROOT })}
+          className="space-y-2"
+        >
+          <h3 className="text-xs font-medium text-muted-foreground">
+            <T>
+              Files in <Var>{SPACE_SHARED_ROOT}</Var>
+            </T>
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            <T>Files are visible to members.</T>
+          </p>
+        </section>
+      ) : (
+        <SharedFiles
+          key={filesEnvironmentId}
+          environmentId={filesEnvironmentId}
+          changedAt={projection?.updatedAt ?? null}
+          onOpenFile={props.onOpenFile}
+        />
+      )}
     </div>
   );
 }
@@ -168,6 +185,7 @@ function SpaceMembers({ space }: { readonly space: Space }) {
   const shown = members.slice(0, PANEL_MEMBER_LIMIT);
   const hidden = members.length - shown.length;
   const canManage = TrevizeSpaces.canManageSpace(space);
+  const self = TrevizeSpaces.selfSpaceMember(members, userId);
   const canLeave = TrevizeSpaces.canLeaveSpace(space, members, userId);
   return (
     <section aria-label={gt("Members")} className="space-y-2">
@@ -194,7 +212,7 @@ function SpaceMembers({ space }: { readonly space: Space }) {
             <li key={member.userId} className="flex items-center gap-2 text-sm">
               <SpaceMemberAvatar member={member} />
               <span className="min-w-0 flex-1 truncate">
-                {member.userId === userId
+                {TrevizeSpaces.isSelfSpaceMember(member, userId)
                   ? gt("{name} (you)", { name: TrevizeSpaces.spaceMemberLabel(member) })
                   : TrevizeSpaces.spaceMemberLabel(member)}
               </span>
@@ -210,8 +228,12 @@ function SpaceMembers({ space }: { readonly space: Space }) {
               {gt("{count} more", { count: hidden })}
             </Button>
           ) : null}
-          {canLeave && userId !== null ? (
-            <Button size="xs" variant="ghost-muted" onClick={() => void leaveSpace(space, userId)}>
+          {canLeave && self !== null ? (
+            <Button
+              size="xs"
+              variant="ghost-muted"
+              onClick={() => void leaveSpace(space, self.userId)}
+            >
               <T>Leave space</T>
             </Button>
           ) : null}

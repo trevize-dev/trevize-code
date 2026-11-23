@@ -16,6 +16,8 @@ import {
   canOperateSpace,
   closeSpaceTab,
   isLastSpaceOwner,
+  isSelfSpaceMember,
+  selfSpaceMember,
   defaultSpaceWorkspaceId,
   placeRepositories,
   githubRepositorySlug,
@@ -421,6 +423,18 @@ describe("space members", () => {
     // Everyone in the workspace is a member of a workspace-wide space anyway.
     expect(canLeaveSpace({ visibility: "workspace" }, members, "usr_v")).toBe(false);
     expect(canLeaveSpace({}, members, "usr_v")).toBe(false);
+  });
+
+  it("tells the caller apart by the server's self flag, else by the account id", () => {
+    const flagged = members.map((entry) => ({ ...entry, self: entry.userId === "usr_m" }));
+    // The flag wins over a stale or unrelated account id.
+    expect(selfSpaceMember(flagged, "usr_v")?.userId).toBe("usr_m");
+    expect(selfSpaceMember(flagged, null)?.userId).toBe("usr_m");
+    expect(canLeaveSpace({ visibility: "private" }, flagged, null)).toBe(true);
+    // Older servers send no flag: fall back to the account id.
+    expect(selfSpaceMember(members, "usr_v")?.userId).toBe("usr_v");
+    expect(selfSpaceMember(members, null)).toBeNull();
+    expect(isSelfSpaceMember({ userId: "usr_v", self: false }, "usr_v")).toBe(false);
   });
 
   it("offers workspace members not yet listed, matching name or email", () => {

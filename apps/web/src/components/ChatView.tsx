@@ -69,6 +69,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   AuthPreviewOperateScope,
+  AuthFilesystemReadScope,
   AuthTerminalOperateScope,
   type AssistantCitation,
   type ResponseContextRecord,
@@ -482,6 +483,7 @@ export default function ChatView(props: ChatViewProps) {
     useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) &&
     readOnlyReason === undefined;
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const canReadFiles = useEnvironmentScope(environmentId, AuthFilesystemReadScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
   const handleNewThread = useNewThreadHandler();
   const routeThreadRef = scopeThreadRef(environmentId, threadId);
@@ -4186,8 +4188,8 @@ export default function ChatView(props: ChatViewProps) {
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
+          diffAvailable={isServerThread && isGitRepo && canReadFiles}
+          filesAvailable={activeProject !== null && canReadFiles}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={linkedItemsSurfaceAvailable}
           deviceAvailable={activeThreadRef !== null}

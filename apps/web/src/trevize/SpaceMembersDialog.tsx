@@ -66,7 +66,7 @@ function reportSpaceFailure(title: string, error: unknown) {
   });
 }
 
-/** The signed-in Trevize user's id, or null when unknown (e.g. signed in with an API key). */
+/** The signed-in Trevize user's id when known; tells you apart on servers without `self`. */
 export function useTrevizeUserId(): string | null {
   return useAuth().userId;
 }
@@ -305,6 +305,7 @@ function SpaceMembersDialog(props: { readonly space: Space; readonly onClose: ()
     }
   };
 
+  const self = TrevizeSpaces.selfSpaceMember(members, userId);
   const canLeave = TrevizeSpaces.canLeaveSpace(space, members, userId);
 
   return (
@@ -364,7 +365,9 @@ function SpaceMembersDialog(props: { readonly space: Space; readonly onClose: ()
                         <SpaceMemberAvatar member={member} size="md" />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm">
-                            {member.userId === userId ? gt("{name} (you)", { name: label }) : label}
+                            {TrevizeSpaces.isSelfSpaceMember(member, userId)
+                              ? gt("{name} (you)", { name: label })
+                              : label}
                           </div>
                           {member.email && member.email !== label ? (
                             <div className="truncate text-xs text-muted-foreground">
@@ -411,13 +414,13 @@ function SpaceMembersDialog(props: { readonly space: Space; readonly onClose: ()
           </div>
         </DialogPanel>
         <DialogFooter>
-          {canLeave && userId !== null ? (
+          {canLeave && self !== null ? (
             <Button
               size="sm"
               variant="ghost"
               className="sm:me-auto"
               onClick={() => {
-                void leaveSpace(space, userId).then((left) => {
+                void leaveSpace(space, self.userId).then((left) => {
                   if (left) onClose();
                 });
               }}
