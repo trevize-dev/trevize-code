@@ -47,6 +47,18 @@ export const TrevizeEnvironmentStatus = Schema.Literals([
 ]);
 export type TrevizeEnvironmentStatus = typeof TrevizeEnvironmentStatus.Type;
 
+/**
+ * What an in-flight start is doing. `phase` stays an open string so newer
+ * servers can add phases; `recovering` means the start replaced a sandbox
+ * that broke on the provider.
+ */
+export const TrevizeEnvironmentStart = Schema.Struct({
+  phase: Schema.optional(Schema.NullOr(Schema.String)),
+  phaseStartedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  recovering: Schema.optional(Schema.Boolean),
+});
+export type TrevizeEnvironmentStart = typeof TrevizeEnvironmentStart.Type;
+
 export const TrevizeEnvironment = Schema.Struct({
   id: Schema.String,
   workspaceId: Schema.String,
@@ -62,6 +74,12 @@ export const TrevizeEnvironment = Schema.Struct({
   error: Schema.optional(Schema.NullOr(Schema.String)),
   /** The space this environment runs for; absent on servers without spaces. */
   spaceId: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Non-fatal problems, e.g. a sandbox replaced after a provider failure. */
+  warnings: Schema.optional(Schema.Array(Schema.String)),
+  /** Start progress while one is in flight; absent on older servers. */
+  start: Schema.optional(Schema.NullOr(TrevizeEnvironmentStart)),
+  /** When a start last replaced a broken sandbox; absent on older servers. */
+  sandboxReplacedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type TrevizeEnvironment = typeof TrevizeEnvironment.Type;
 
@@ -133,6 +151,9 @@ export type TrevizeConnectReady = typeof TrevizeConnectReady.Type;
 const TrevizeConnectStarting = Schema.Struct({
   status: Schema.Literal("starting"),
   retryAfterSeconds: Schema.Number,
+  /** See `TrevizeEnvironmentStart`; absent on older servers. */
+  phase: Schema.optional(Schema.NullOr(Schema.String)),
+  recovering: Schema.optional(Schema.Boolean),
 });
 
 /** Answered for a recently failed environment; connecting again after `retryAfterSeconds` retries the start. */
@@ -150,7 +171,18 @@ const TrevizeWakeResult = Schema.Struct({
   status: Schema.String,
   retryAfterSeconds: Schema.optional(Schema.Number),
   error: Schema.optional(Schema.NullOr(Schema.String)),
+  /** See `TrevizeEnvironmentStart`; absent on older servers. */
+  phase: Schema.optional(Schema.NullOr(Schema.String)),
+  recovering: Schema.optional(Schema.Boolean),
 });
+
+/** What a wake reported on one poll, for clients showing progress. */
+export interface TrevizeWakeProgress {
+  readonly status: string;
+  readonly phase: string | null;
+  readonly recovering: boolean;
+  readonly error: string | null;
+}
 
 const TrevizeConnectResult = Schema.Union([
   TrevizeConnectReady,
@@ -324,6 +356,17 @@ export const listEnvironments = Effect.fn("clientRuntime.trevize.listEnvironment
   return body.environments;
 });
 
+export const getEnvironment = Effect.fn("clientRuntime.trevize.getEnvironment")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.get(apiUrl(config, `/environments/${encodeURIComponent(environmentId)}`)),
+    TrevizeEnvironment,
+  );
+});
+
 export const createEnvironment = Effect.fn("clientRuntime.trevize.createEnvironment")(function* (
   config: TrevizeApiConfig,
   input: {
@@ -441,7 +484,11 @@ export const connectWhenReady = Effect.fn("clientRuntime.trevize.connectWhenRead
 export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(function* (
   config: TrevizeApiConfig,
   environmentId: string,
-  options?: { readonly maxWaitMs?: number },
+  options?: {
+    readonly maxWaitMs?: number;
+    /** Told what each poll answered, e.g. to show the start's progress. */
+    readonly onProgress?: (progress: TrevizeWakeProgress) => Effect.Effect<void>;
+  },
 ) {
   const maxWaitMs = options?.maxWaitMs ?? DEFAULT_CONNECT_MAX_WAIT_MS;
   const startedAt = yield* Clock.currentTimeMillis;
@@ -468,6 +515,14 @@ export const wakeWhenReady = Effect.fn("clientRuntime.trevize.wakeWhenReady")(fu
       return;
     }
     const wake = result.value;
+    if (options?.onProgress) {
+      yield* options.onProgress({
+        status: wake.status,
+        phase: wake.phase ?? null,
+        recovering: wake.recovering ?? false,
+        error: wake.error ?? null,
+      });
+    }
     if (wake.status === "ready" || wake.status === "running") return;
     if (wake.status === "failed") {
       return yield* new TrevizeApiError({

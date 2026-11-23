@@ -334,6 +334,15 @@ const makeHarness = Effect.fn(function* (input: {
     if (archived?.[1] !== undefined) {
       return Promise.resolve(Response.json(trevizeEnvironment(archived[1], "archived")));
     }
+    const single = /^\/api\/v1\/environments\/([^/]+)$/.exec(url.pathname);
+    if (single?.[1] !== undefined && (init.method ?? "GET") === "GET") {
+      const found = input.environments.find((environment) => environment.id === single[1]);
+      return Promise.resolve(
+        found === undefined
+          ? Response.json({ message: "Not found" }, { status: 404 })
+          : Response.json(found),
+      );
+    }
     if (/^\/api\/v1\/environments\/[^/]+\/wake$/.test(url.pathname)) {
       return Promise.resolve(Response.json({ status: "running" }));
     }
@@ -520,6 +529,44 @@ describe("TrevizeCloudSync", () => {
         yield* awaitState((state) => state.lastSyncedAt === 30_000);
         expect([...harness.paused]).toEqual([]);
         expect(harness.retried).toEqual([T3_A]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("follows a start Trevize runs and reconnects as soon as it runs", () =>
+    Effect.gen(function* () {
+      const environments: Array<TrevizeEnvironment> = [
+        {
+          ...trevizeEnvironment("env_a", "starting"),
+          start: { phase: "repositories", recovering: true },
+        },
+      ];
+      const harness = yield* makeHarness({
+        saved: [savedEntry(T3_A, origin("env_a"))],
+        environments,
+        managedOrigins: [],
+      });
+
+      yield* Effect.gen(function* () {
+        const first = yield* awaitState((state) => state.progress.has(T3_A));
+        expect(Option.map(first, (state) => state.progress.get(T3_A))).toEqual(
+          Option.some({ status: "starting", phase: "repositories", recovering: true, error: null }),
+        );
+
+        environments[0] = {
+          ...trevizeEnvironment("env_a", "starting"),
+          start: { phase: "runtime", recovering: true },
+        };
+        yield* TestClock.adjust("3 seconds");
+        yield* awaitState((state) => state.progress.get(T3_A)?.phase === "runtime");
+        expect(harness.requests).toContain("GET /api/v1/environments/env_a");
+        expect(harness.retried).toEqual([]);
+
+        // Running now: retried without waiting for the next sync.
+        environments[0] = trevizeEnvironment("env_a", "running");
+        yield* TestClock.adjust("3 seconds");
+        yield* awaitState((state) => !state.progress.has(T3_A));
+        expect(harness.retried).toContain(T3_A);
       }).pipe(Effect.provide(harness.layer));
     }),
   );
