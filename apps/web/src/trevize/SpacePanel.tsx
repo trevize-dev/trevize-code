@@ -7,7 +7,14 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { T, useGT, Var } from "gt-react";
-import { CheckIcon, CircleDotIcon, CircleIcon, FileTextIcon, RotateCwIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleDotIcon,
+  CircleIcon,
+  FileTextIcon,
+  RotateCwIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useEffect, useEffectEvent } from "react";
 
 import { useDirectoryEntries } from "~/components/files/useDirectoryEntries";
@@ -16,8 +23,16 @@ import { Spinner } from "~/components/ui/spinner";
 import { cn } from "~/lib/utils";
 import { useThreadProjection } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
+import { useEnvironmentQuery } from "~/state/query";
 import * as Trevize from "./commands";
-import { SpaceBadge, useSpaces } from "./Spaces";
+import {
+  SpaceMemberAvatar,
+  SpaceRoleBadge,
+  openSpaceMembers,
+  useLeaveSpace,
+  useTrevizeUserId,
+} from "./SpaceMembersDialog";
+import { SpaceBadge, useSpaces, type Space } from "./Spaces";
 
 /** Where `/shared` is mounted in every environment of a space. */
 const SPACE_SHARED_ROOT = "/shared";
@@ -55,7 +70,7 @@ export function SpacePanel(props: {
   readonly onOpenFile: (absolutePath: string) => void;
 }) {
   const gt = useGT();
-  const { spaces, threads } = useSpaces();
+  const { spaces, threads, environments } = useSpaces();
   const space = spaces.find((candidate) => candidate.id === props.spaceId) ?? null;
   const orchestrator = space ? TrevizeSpaces.findOrchestratorThread(space, threads) : null;
   const orchestratorTarget = useSpaceThreadTarget(orchestrator);
@@ -63,6 +78,7 @@ export function SpacePanel(props: {
   const projection = useThreadProjection(orchestratorRef)?.projection ?? null;
   const plan = latestTodoList(projection);
   const filesEnvironmentId = orchestratorRef?.environmentId ?? props.fallbackEnvironmentId;
+  const warnings = space ? TrevizeSpaces.spaceEnvironmentWarnings(space.id, environments) : [];
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto p-4">
@@ -72,6 +88,19 @@ export function SpacePanel(props: {
           <h2 className="truncate text-sm font-medium">{space.name}</h2>
         </div>
       ) : null}
+
+      {warnings.length > 0 ? (
+        <ul className="space-y-1">
+          {warnings.map((warning) => (
+            <li key={warning} className="flex items-start gap-2 text-xs text-muted-foreground">
+              <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+              <span className="min-w-0 wrap-anywhere">{warning}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {space && TrevizeSpaces.spaceHasMembers(space) ? <SpaceMembers space={space} /> : null}
 
       <section aria-label={gt("Tasks")} className="space-y-2">
         <h3 className="text-xs font-medium text-muted-foreground">
@@ -124,6 +153,71 @@ export function SpacePanel(props: {
         onOpenFile={props.onOpenFile}
       />
     </div>
+  );
+}
+
+/** Shown in the panel before "N more" opens the members dialog. */
+const PANEL_MEMBER_LIMIT = 6;
+
+function SpaceMembers({ space }: { readonly space: Space }) {
+  const gt = useGT();
+  const userId = useTrevizeUserId();
+  const leaveSpace = useLeaveSpace();
+  const query = useEnvironmentQuery(Trevize.spaceMembersAtom(space.id));
+  const members = TrevizeSpaces.sortSpaceMembers(query.data ?? []);
+  const shown = members.slice(0, PANEL_MEMBER_LIMIT);
+  const hidden = members.length - shown.length;
+  const canManage = TrevizeSpaces.canManageSpace(space);
+  const canLeave = TrevizeSpaces.canLeaveSpace(space, members, userId);
+  return (
+    <section aria-label={gt("Members")} className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium text-muted-foreground">
+          <T>Members</T>
+        </h3>
+        {canManage ? (
+          <Button size="xs" variant="ghost-muted" onClick={() => openSpaceMembers(space.id)}>
+            <T>Manage</T>
+          </Button>
+        ) : null}
+      </div>
+      {TrevizeSpaces.spaceVisibility(space) === "workspace" ? (
+        <p className="text-xs text-muted-foreground">
+          <T>Everyone in the workspace</T>
+        </p>
+      ) : null}
+      {query.error !== null && query.data === null ? (
+        <p className="text-sm text-muted-foreground">{query.error}</p>
+      ) : query.data === null ? null : (
+        <ul className="space-y-1.5">
+          {shown.map((member) => (
+            <li key={member.userId} className="flex items-center gap-2 text-sm">
+              <SpaceMemberAvatar member={member} />
+              <span className="min-w-0 flex-1 truncate">
+                {member.userId === userId
+                  ? gt("{name} (you)", { name: TrevizeSpaces.spaceMemberLabel(member) })
+                  : TrevizeSpaces.spaceMemberLabel(member)}
+              </span>
+              <SpaceRoleBadge role={member.role} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {hidden > 0 || canLeave ? (
+        <div className="flex items-center gap-1">
+          {hidden > 0 ? (
+            <Button size="xs" variant="ghost-muted" onClick={() => openSpaceMembers(space.id)}>
+              {gt("{count} more", { count: hidden })}
+            </Button>
+          ) : null}
+          {canLeave && userId !== null ? (
+            <Button size="xs" variant="ghost-muted" onClick={() => void leaveSpace(space, userId)}>
+              <T>Leave space</T>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

@@ -557,9 +557,17 @@ describe("spaces", () => {
         ),
       );
 
-      // Older servers send no `maxEnvironments`.
-      expect(Option.map(listed, (spaces) => spaces.map((space) => space.maxEnvironments))).toEqual(
-        Option.some([undefined]),
+      // Older servers send no `maxEnvironments`, `role` or `visibility`.
+      expect(
+        Option.map(listed, (spaces) =>
+          spaces.map(({ maxEnvironments, role, visibility }) => ({
+            maxEnvironments,
+            role,
+            visibility,
+          })),
+        ),
+      ).toEqual(
+        Option.some([{ maxEnvironments: undefined, role: undefined, visibility: undefined }]),
       );
       expect(calls[0]?.url).toBe("https://trevize.example.test/api/v1/spaces?workspaceId=ws_1");
       expect(unavailable).toEqual(Option.none());
@@ -578,6 +586,7 @@ describe("spaces", () => {
           repositoryIds: ["acme/billing"],
           maxEnvironments: 4,
           orchestratorModel: { provider: "codex", model: "gpt-5.5" },
+          visibility: "private",
         }).pipe(
           Effect.provide(
             layerTrevizeHttp(calls, [() => Response.json({ ...spaceJson, maxEnvironments: 4 })]),
@@ -595,10 +604,103 @@ describe("spaces", () => {
               name: "Billing revamp",
               repositoryIds: ["acme/billing"],
               maxEnvironments: 4,
+              visibility: "private",
               orchestrator: { provider: "codex", model: "gpt-5.5" },
             },
           ],
         ]);
       }),
+  );
+
+  it.effect("decodes the caller's role and the space's visibility", () =>
+    Effect.gen(function* () {
+      const listed = yield* TrevizeApi.listSpaces(config, "ws_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp(
+            [],
+            [
+              () =>
+                Response.json({
+                  spaces: [{ ...spaceJson, role: "viewer", visibility: "private" }],
+                }),
+            ],
+          ),
+        ),
+      );
+      expect(
+        Option.map(listed, (spaces) =>
+          spaces.map(({ role, visibility }) => ({ role, visibility })),
+        ),
+      ).toEqual(Option.some([{ role: "viewer", visibility: "private" }]));
+    }),
+  );
+});
+
+const memberJson = {
+  userId: "usr_2",
+  name: "Ada",
+  email: "ada@example.test",
+  image: null,
+  role: "member",
+  addedByUserId: "usr_1",
+  createdAt: "2026-10-01T00:00:00.000Z",
+};
+
+describe("space members", () => {
+  it.effect("lists, sets and removes space members, and lists workspace members", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const layer = layerTrevizeHttp(calls, [
+        () => Response.json({ members: [memberJson] }),
+        () => Response.json({ ...memberJson, role: "viewer" }),
+        () => Response.json({ removed: true }),
+        () =>
+          Response.json({
+            members: [
+              { userId: "usr_3", name: null, email: "bo@example.test", image: null, role: "admin" },
+            ],
+          }),
+      ]);
+      const members = yield* TrevizeApi.listSpaceMembers(config, "spc 1").pipe(
+        Effect.provide(layer),
+      );
+      const changed = yield* TrevizeApi.setSpaceMember(config, "spc 1", "usr_2", "viewer").pipe(
+        Effect.provide(layer),
+      );
+      const removed = yield* TrevizeApi.removeSpaceMember(config, "spc 1", "usr_2").pipe(
+        Effect.provide(layer),
+      );
+      const workspace = yield* TrevizeApi.listWorkspaceMembers(config, "ws_1").pipe(
+        Effect.provide(layer),
+      );
+
+      expect(members.map((member) => member.role)).toEqual(["member"]);
+      expect(changed.role).toBe("viewer");
+      expect(removed).toBe(true);
+      expect(workspace.map((member) => member.email)).toEqual(["bo@example.test"]);
+      expect(
+        calls.map((call) => [call.method, call.url, call.body && JSON.parse(call.body)]),
+      ).toEqual([
+        ["GET", "https://trevize.example.test/api/v1/spaces/spc%201/members", null],
+        [
+          "PUT",
+          "https://trevize.example.test/api/v1/spaces/spc%201/members/usr_2",
+          { role: "viewer" },
+        ],
+        ["DELETE", "https://trevize.example.test/api/v1/spaces/spc%201/members/usr_2", null],
+        ["GET", "https://trevize.example.test/api/v1/workspaces/ws_1/members", null],
+      ]);
+    }),
+  );
+
+  it.effect("fails with the server's message when a change would leave no owner", () =>
+    Effect.gen(function* () {
+      const message = "A space needs at least one owner. Make someone else an owner first.";
+      const error = yield* TrevizeApi.removeSpaceMember(config, "spc_1", "usr_1").pipe(
+        Effect.provide(layerTrevizeHttp([], [() => Response.json({ message }, { status: 409 })])),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ reason: "request", status: 409, message });
+    }),
   );
 });

@@ -34,16 +34,23 @@ import {
   wakeWhenReady,
   listEnvironments,
   listRepositories,
+  listSpaceMembers as listTrevizeSpaceMembers,
   listSpaces,
+  listWorkspaceMembers as listTrevizeWorkspaceMembers,
   listWorkspaceThreads,
   listWorkspaces,
+  removeSpaceMember as removeTrevizeSpaceMember,
+  setSpaceMember as setTrevizeSpaceMember,
   type TrevizeApiConfig,
   type TrevizeEnvironment,
   type TrevizeSpace,
   type TrevizeSpaceInput,
+  type TrevizeSpaceMember,
   type TrevizeSpacePatch,
+  type TrevizeSpaceRole,
   type TrevizeThread,
   type TrevizeWorkspace,
+  type TrevizeWorkspaceMember,
 } from "./api.ts";
 import {
   connectTrevizeEnvironment,
@@ -312,6 +319,24 @@ export class TrevizeCloudSync extends Context.Service<
       patch: TrevizeSpacePatch,
     ) => Effect.Effect<TrevizeSpace, TrevizeApiError>;
     readonly archiveSpace: (spaceId: string) => Effect.Effect<void, TrevizeApiError>;
+    readonly listSpaceMembers: (
+      spaceId: string,
+    ) => Effect.Effect<ReadonlyArray<TrevizeSpaceMember>, TrevizeApiError>;
+    readonly listWorkspaceMembers: (
+      workspaceId: string,
+    ) => Effect.Effect<ReadonlyArray<TrevizeWorkspaceMember>, TrevizeApiError>;
+    /** Adds a member or changes a role, then syncs, since it may change the caller's own role. */
+    readonly setSpaceMember: (input: {
+      readonly spaceId: string;
+      readonly userId: string;
+      readonly role: TrevizeSpaceRole;
+    }) => Effect.Effect<TrevizeSpaceMember, TrevizeApiError>;
+    /** Removes a member, then syncs. `leaving` (yourself, members-only) hides the space right away. */
+    readonly removeSpaceMember: (input: {
+      readonly spaceId: string;
+      readonly userId: string;
+      readonly leaving: boolean;
+    }) => Effect.Effect<void, TrevizeApiError>;
     /**
      * Starts a cloud session: creates a fresh environment for one repository,
      * waits for it and pairs this device, then starts a thread with the first
@@ -684,10 +709,16 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     const target = resolveMyTaskTarget(task, current.environments, saved);
     switch (target._tag) {
       case "Unavailable":
-        return yield* new TrevizeApiError({ reason: "request", message: target.reason });
+        return yield* new TrevizeApiError({
+          reason: "request",
+          message: target.reason,
+        });
       case "Saved":
         if (target.sleeping) yield* wake(target.environmentId);
-        return { environmentId: target.environmentId, threadId: target.threadId };
+        return {
+          environmentId: target.environmentId,
+          threadId: target.threadId,
+        };
       case "Connect": {
         const loaded = yield* loadConfig;
         if (Option.isNone(loaded)) {
@@ -779,9 +810,10 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     const workspaceId =
       input.workspaceId ??
       (yield* workspaceForRepositories(config, settings.workspaceId, input.repositoryIds));
-    const space = yield* createTrevizeSpace(config, { ...input, workspaceId }).pipe(
-      Effect.provideContext(context),
-    );
+    const space = yield* createTrevizeSpace(config, {
+      ...input,
+      workspaceId,
+    }).pipe(Effect.provideContext(context));
     yield* SubscriptionRef.update(state, (latest) => ({
       ...latest,
       spaces: [space, ...latest.spaces.filter((candidate) => candidate.id !== space.id)],
@@ -811,6 +843,56 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       ...current,
       spaces: current.spaces.filter((space) => space.id !== spaceId),
     }));
+    yield* syncNow;
+  });
+
+  const listSpaceMembers = Effect.fn("TrevizeCloudSync.listSpaceMembers")(function* (
+    spaceId: string,
+  ) {
+    const { config } = yield* requireConfig("see this space's members");
+    return yield* listTrevizeSpaceMembers(config, spaceId).pipe(Effect.provideContext(context));
+  });
+
+  const listWorkspaceMembers = Effect.fn("TrevizeCloudSync.listWorkspaceMembers")(function* (
+    workspaceId: string,
+  ) {
+    const { config } = yield* requireConfig("see your workspace's members");
+    return yield* listTrevizeWorkspaceMembers(config, workspaceId).pipe(
+      Effect.provideContext(context),
+    );
+  });
+
+  const setSpaceMember = Effect.fn("TrevizeCloudSync.setSpaceMember")(function* (input: {
+    readonly spaceId: string;
+    readonly userId: string;
+    readonly role: TrevizeSpaceRole;
+  }) {
+    const { config } = yield* requireConfig("change this space's members");
+    const member = yield* setTrevizeSpaceMember(
+      config,
+      input.spaceId,
+      input.userId,
+      input.role,
+    ).pipe(Effect.provideContext(context));
+    yield* syncNow;
+    return member;
+  });
+
+  const removeSpaceMember = Effect.fn("TrevizeCloudSync.removeSpaceMember")(function* (input: {
+    readonly spaceId: string;
+    readonly userId: string;
+    readonly leaving: boolean;
+  }) {
+    const { config } = yield* requireConfig("change this space's members");
+    yield* removeTrevizeSpaceMember(config, input.spaceId, input.userId).pipe(
+      Effect.provideContext(context),
+    );
+    if (input.leaving) {
+      yield* SubscriptionRef.update(state, (current) => ({
+        ...current,
+        spaces: current.spaces.filter((space) => space.id !== input.spaceId),
+      }));
+    }
     yield* syncNow;
   });
 
@@ -865,7 +947,11 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       }
     }
     yield* syncNow;
-    const launched: LaunchedSession = { environmentId, threadId: dispatched.threadId, unsent };
+    const launched: LaunchedSession = {
+      environmentId,
+      threadId: dispatched.threadId,
+      unsent,
+    };
     return launched;
   });
 
@@ -921,6 +1007,10 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     createSpace,
     updateSpace,
     archiveSpace,
+    listSpaceMembers,
+    listWorkspaceMembers,
+    setSpaceMember,
+    removeSpaceMember,
     launchSession,
     archiveSession,
   });

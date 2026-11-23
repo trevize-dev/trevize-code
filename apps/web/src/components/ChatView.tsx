@@ -7,6 +7,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
+import { EyeIcon } from "lucide-react";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
 import { useFocusComposerOnThreadOpen } from "./chat/useFocusComposerOnThreadOpen";
 import { configuredHostedAppUrl } from "../hostedPairing";
@@ -440,6 +441,8 @@ type ChatViewProps =
       embedded?: SideChatParentPanel;
       /** Replaces the thread title row, e.g. with a space's tab bar. */
       titleRow?: ReactNode;
+      /** Read-only here whatever the connection allows, e.g. for a space viewer; shown over the composer. */
+      readOnlyReason?: string;
       routeKind: "server";
       draftId?: never;
     }
@@ -451,6 +454,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       embedded?: never;
       titleRow?: ReactNode;
+      readOnlyReason?: never;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -471,9 +475,12 @@ export default function ChatView(props: ChatViewProps) {
     forceExpandedMobileComposer = false,
     embedded: parentPanel,
     titleRow,
+    readOnlyReason,
   } = props;
   const embedded = parentPanel !== undefined;
-  const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const canOperateThread =
+    useEnvironmentScope(environmentId, AuthOrchestrationOperateScope) &&
+    readOnlyReason === undefined;
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
   const handleNewThread = useNewThreadHandler();
@@ -2748,8 +2755,13 @@ export default function ChatView(props: ChatViewProps) {
       freshSessionPending && activePendingApproval === null
         ? [freshSessionBannerItem(() => disarmFreshSession(routeThreadKey), messages)]
         : [];
+    const readOnlyItems: ComposerBannerStackItem[] =
+      readOnlyReason === undefined
+        ? []
+        : [{ id: "read-only", variant: "info", icon: <EyeIcon />, title: readOnlyReason }];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
+        ...readOnlyItems,
         ...feedbackBannerItems,
         ...fallbackItems,
         ...limitRecoveryItems,
@@ -2761,6 +2773,7 @@ export default function ChatView(props: ChatViewProps) {
       ];
     }
     return [
+      ...readOnlyItems,
       ...feedbackBannerItems,
       ...fallbackItems,
       ...limitRecoveryItems,
@@ -3795,7 +3808,8 @@ export default function ChatView(props: ChatViewProps) {
                                 isRevertingCheckpoint={isRevertingCheckpoint}
                                 sendDisabledReason={
                                   !canOperateThread
-                                    ? gt("This connection cannot change threads.")
+                                    ? (readOnlyReason ??
+                                      gt("This connection cannot change threads."))
                                     : isEnvironmentChanging
                                       ? gt("Preparing machine")
                                       : isRevertingCheckpoint

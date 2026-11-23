@@ -6,8 +6,12 @@ import {
   type TrevizeEnvironment,
   type TrevizeRepository,
   type TrevizeSpace,
+  type TrevizeSpaceMember,
   type TrevizeSpacePatch,
+  type TrevizeSpaceRole,
+  type TrevizeSpaceVisibility,
   type TrevizeThread,
+  type TrevizeWorkspaceMember,
 } from "./api.ts";
 import { findSavedTrevizeEnvironment } from "./connect.ts";
 import { deriveMyTaskStatus, myTaskActivityAt } from "./myTasks.ts";
@@ -145,6 +149,115 @@ export function normalizeSpaceColor(color: string | null | undefined): string | 
   return value && /^#[0-9a-f]{6}$/.test(value) ? value : null;
 }
 
+/** Roles from most to least access. */
+export const SPACE_ROLES: ReadonlyArray<TrevizeSpaceRole> = ["owner", "member", "viewer"];
+
+/** The caller's role; servers from before space members made everyone an owner. */
+function spaceRole(space: Pick<TrevizeSpace, "role">): TrevizeSpaceRole {
+  return space.role ?? "owner";
+}
+
+/** Servers from before space members showed every space to the whole workspace. */
+export function spaceVisibility(space: Pick<TrevizeSpace, "visibility">): TrevizeSpaceVisibility {
+  return space.visibility ?? "workspace";
+}
+
+/** Whether the server knows space members, so the members API exists. */
+export function spaceHasMembers(space: Pick<TrevizeSpace, "role">): boolean {
+  return space.role !== undefined;
+}
+
+/** Owners manage members, visibility and archiving. */
+export function canManageSpace(space: Pick<TrevizeSpace, "role">): boolean {
+  return spaceRole(space) === "owner";
+}
+
+/** Owners and members talk to the orchestrator, start agents and change settings; viewers read. */
+export function canOperateSpace(space: Pick<TrevizeSpace, "role">): boolean {
+  return spaceRole(space) !== "viewer";
+}
+
+type MemberIdentity = Pick<TrevizeSpaceMember, "userId" | "name" | "email">;
+
+/** How a member is named: their name, else their email, else their id. */
+export function spaceMemberLabel(member: MemberIdentity): string {
+  return member.name?.trim() || member.email?.trim() || member.userId;
+}
+
+/** Up to two letters for a member's avatar fallback. */
+export function spaceMemberInitials(member: MemberIdentity): string {
+  const name = member.name?.trim();
+  if (name) return spaceInitials(name);
+  const email = member.email?.trim();
+  return email ? email.slice(0, 1).toUpperCase() : "?";
+}
+
+/** Owners first, then members, then viewers; by name within a role. */
+export function sortSpaceMembers<M extends MemberIdentity & Pick<TrevizeSpaceMember, "role">>(
+  members: ReadonlyArray<M>,
+): ReadonlyArray<M> {
+  return [...members].sort(
+    (a, b) =>
+      SPACE_ROLES.indexOf(a.role) - SPACE_ROLES.indexOf(b.role) ||
+      spaceMemberLabel(a).localeCompare(spaceMemberLabel(b)),
+  );
+}
+
+/** Whether `userId` is the space's only owner, whom the server won't demote or remove. */
+export function isLastSpaceOwner(
+  members: ReadonlyArray<Pick<TrevizeSpaceMember, "userId" | "role">>,
+  userId: string,
+): boolean {
+  const owners = members.filter((member) => member.role === "owner");
+  return owners.length === 1 && owners[0]?.userId === userId;
+}
+
+/**
+ * Whether `userId` can leave: they are listed in a members-only space and are
+ * not its last owner. In a workspace-wide space leaving would change nothing,
+ * since everyone in the workspace is a member anyway.
+ */
+export function canLeaveSpace(
+  space: Pick<TrevizeSpace, "visibility">,
+  members: ReadonlyArray<Pick<TrevizeSpaceMember, "userId" | "role">>,
+  userId: string | null,
+): boolean {
+  if (userId === null || spaceVisibility(space) !== "private") return false;
+  return members.some((member) => member.userId === userId) && !isLastSpaceOwner(members, userId);
+}
+
+/** Workspace members not yet listed in the space, matching `query` by name or email. */
+export function spaceMemberCandidates(
+  workspaceMembers: ReadonlyArray<TrevizeWorkspaceMember>,
+  members: ReadonlyArray<Pick<TrevizeSpaceMember, "userId">>,
+  query: string,
+): ReadonlyArray<TrevizeWorkspaceMember> {
+  const listed = new Set(members.map((member) => member.userId));
+  const needle = query.trim().toLowerCase();
+  const candidates = workspaceMembers.filter(
+    (candidate) =>
+      !listed.has(candidate.userId) &&
+      (needle === "" ||
+        [candidate.name, candidate.email].some((value) => value?.toLowerCase().includes(needle))),
+  );
+  return candidates.sort((a, b) => spaceMemberLabel(a).localeCompare(spaceMemberLabel(b)));
+}
+
+/** Distinct warnings of a space's environments, e.g. providers a shared space can't use. */
+export function spaceEnvironmentWarnings(
+  spaceId: string,
+  environments: ReadonlyArray<Pick<TrevizeEnvironment, "spaceId" | "status" | "warnings">>,
+): ReadonlyArray<string> {
+  const warnings = new Set<string>();
+  for (const environment of environments) {
+    if (environment.spaceId !== spaceId || environment.status === "archived") continue;
+    for (const warning of environment.warnings ?? []) {
+      if (warning.trim()) warnings.add(warning.trim());
+    }
+  }
+  return [...warnings];
+}
+
 /** What the space settings dialog edits. */
 export interface SpaceSettingsDraft {
   readonly name: string;
@@ -152,17 +265,22 @@ export interface SpaceSettingsDraft {
   readonly color: string | null;
   readonly instructions: string;
   readonly maxEnvironments: number;
+  readonly visibility: TrevizeSpaceVisibility;
 }
 
-export function spaceSettingsDraft(
-  space: Pick<TrevizeSpace, "name" | "icon" | "color" | "instructions" | "maxEnvironments">,
-): SpaceSettingsDraft {
+type SpaceSettingsFields = Pick<
+  TrevizeSpace,
+  "name" | "icon" | "color" | "instructions" | "maxEnvironments" | "visibility"
+>;
+
+export function spaceSettingsDraft(space: SpaceSettingsFields): SpaceSettingsDraft {
   return {
     name: space.name,
     icon: space.icon ?? null,
     color: normalizeSpaceColor(space.color),
     instructions: space.instructions ?? "",
     maxEnvironments: space.maxEnvironments ?? DEFAULT_SPACE_ENVIRONMENTS,
+    visibility: spaceVisibility(space),
   };
 }
 
@@ -171,13 +289,15 @@ export function spaceSettingsDraft(
  * changed. Blank instructions clear them; a blank name is never sent.
  */
 export function spaceSettingsPatch(
-  space: Pick<TrevizeSpace, "name" | "icon" | "color" | "instructions" | "maxEnvironments">,
+  space: SpaceSettingsFields,
   draft: SpaceSettingsDraft,
 ): TrevizeSpacePatch | null {
   const current = spaceSettingsDraft(space);
   const name = draft.name.trim();
   const instructions = draft.instructions.trim() ? draft.instructions : null;
-  const patch: { -readonly [K in keyof TrevizeSpacePatch]: TrevizeSpacePatch[K] } = {};
+  const patch: {
+    -readonly [K in keyof TrevizeSpacePatch]: TrevizeSpacePatch[K];
+  } = {};
   if (name && name !== current.name) patch.name = name;
   if (draft.icon !== current.icon) patch.icon = draft.icon;
   if (draft.color !== current.color) patch.color = draft.color;
@@ -187,6 +307,7 @@ export function spaceSettingsPatch(
   if (draft.maxEnvironments !== current.maxEnvironments) {
     patch.maxEnvironments = draft.maxEnvironments;
   }
+  if (draft.visibility !== current.visibility) patch.visibility = draft.visibility;
   return Object.keys(patch).length > 0 ? patch : null;
 }
 

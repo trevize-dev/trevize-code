@@ -4,9 +4,18 @@ import * as Option from "effect/Option";
 
 import { BearerConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
 import { BearerConnectionTarget } from "../connection/model.ts";
-import type { TrevizeSpace, TrevizeThread } from "./api.ts";
+import type {
+  TrevizeSpace,
+  TrevizeSpaceMember,
+  TrevizeThread,
+  TrevizeWorkspaceMember,
+} from "./api.ts";
 import {
+  canLeaveSpace,
+  canManageSpace,
+  canOperateSpace,
   closeSpaceTab,
+  isLastSpaceOwner,
   defaultSpaceWorkspaceId,
   placeRepositories,
   githubRepositorySlug,
@@ -18,10 +27,17 @@ import {
   spaceColorIndex,
   spaceEnvironmentIds,
   spaceEnvironmentFailed,
+  spaceEnvironmentWarnings,
+  spaceHasMembers,
   spaceInitials,
+  spaceMemberCandidates,
+  spaceMemberInitials,
+  spaceMemberLabel,
   spaceNeedsYou,
   spaceSettingsDraft,
   spaceSettingsPatch,
+  spaceVisibility,
+  sortSpaceMembers,
 } from "./spaces.ts";
 
 function thread(id: string, overrides: Partial<TrevizeThread> = {}): TrevizeThread {
@@ -296,6 +312,9 @@ describe("spaceSettingsPatch", () => {
     expect(
       spaceSettingsPatch(settings, { ...spaceSettingsDraft(settings), maxEnvironments: 8 }),
     ).toEqual({ maxEnvironments: 8 });
+    expect(
+      spaceSettingsPatch(settings, { ...spaceSettingsDraft(settings), visibility: "private" }),
+    ).toEqual({ visibility: "private" });
   });
 
   it("clears blank instructions and resets the icon with null", () => {
@@ -312,5 +331,124 @@ describe("spaceSettingsPatch", () => {
 
   it("never sends a blank name", () => {
     expect(spaceSettingsPatch(settings, { ...spaceSettingsDraft(settings), name: " " })).toBeNull();
+  });
+});
+
+describe("space roles", () => {
+  it("treats a server from before space members as owner of a workspace-wide space", () => {
+    expect([spaceVisibility(space), canManageSpace(space), canOperateSpace(space)]).toEqual([
+      "workspace",
+      true,
+      true,
+    ]);
+    expect(spaceHasMembers(space)).toBe(false);
+  });
+
+  it("lets owners manage, members operate and viewers only read", () => {
+    const access = (role: "owner" | "member" | "viewer") => {
+      const shared = { ...space, role, visibility: "private" as const };
+      return [spaceHasMembers(shared), canManageSpace(shared), canOperateSpace(shared)];
+    };
+    expect(access("owner")).toEqual([true, true, true]);
+    expect(access("member")).toEqual([true, false, true]);
+    expect(access("viewer")).toEqual([true, false, false]);
+  });
+});
+
+function member(
+  userId: string,
+  role: TrevizeSpaceMember["role"],
+  name: string | null = null,
+  email: string | null = null,
+): TrevizeSpaceMember {
+  return {
+    userId,
+    name,
+    email,
+    image: null,
+    role,
+    addedByUserId: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+  };
+}
+
+describe("space members", () => {
+  const members = [
+    member("usr_v", "viewer", "Zed"),
+    member("usr_m", "member", "Bo"),
+    member("usr_o2", "owner", "Cy"),
+    member("usr_o1", "owner", "Ada"),
+  ];
+
+  it("sorts owners first, then members and viewers, by name", () => {
+    expect(sortSpaceMembers(members).map((entry) => entry.userId)).toEqual([
+      "usr_o1",
+      "usr_o2",
+      "usr_m",
+      "usr_v",
+    ]);
+  });
+
+  it("names a member by name, then email, then id", () => {
+    expect(
+      [
+        member("usr_1", "member", " Ada Lovelace "),
+        member("usr_2", "member", null, "bo@example.test"),
+        member("usr_3", "member"),
+      ].map((entry) => [spaceMemberLabel(entry), spaceMemberInitials(entry)]),
+    ).toEqual([
+      ["Ada Lovelace", "AL"],
+      ["bo@example.test", "B"],
+      ["usr_3", "?"],
+    ]);
+  });
+
+  it("finds the last owner only when exactly one is left", () => {
+    expect(isLastSpaceOwner(members, "usr_o1")).toBe(false);
+    const single = members.filter((entry) => entry.userId !== "usr_o2");
+    expect(isLastSpaceOwner(single, "usr_o1")).toBe(true);
+    expect(isLastSpaceOwner(single, "usr_m")).toBe(false);
+  });
+
+  it("lets listed people leave a members-only space unless they are its last owner", () => {
+    const private_ = { visibility: "private" as const };
+    const single = members.filter((entry) => entry.userId !== "usr_o2");
+    expect(canLeaveSpace(private_, members, "usr_v")).toBe(true);
+    expect(canLeaveSpace(private_, members, "usr_o1")).toBe(true);
+    expect(canLeaveSpace(private_, single, "usr_o1")).toBe(false);
+    expect(canLeaveSpace(private_, members, "usr_unlisted")).toBe(false);
+    expect(canLeaveSpace(private_, members, null)).toBe(false);
+    // Everyone in the workspace is a member of a workspace-wide space anyway.
+    expect(canLeaveSpace({ visibility: "workspace" }, members, "usr_v")).toBe(false);
+    expect(canLeaveSpace({}, members, "usr_v")).toBe(false);
+  });
+
+  it("offers workspace members not yet listed, matching name or email", () => {
+    const workspace: ReadonlyArray<TrevizeWorkspaceMember> = [
+      { userId: "usr_m", name: "Bo", email: "bo@example.test", image: null, role: "member" },
+      { userId: "usr_x", name: "Xia", email: "xia@example.test", image: null, role: "member" },
+      { userId: "usr_d", name: null, email: "dee@acme.test", image: null, role: "admin" },
+    ];
+    const ids = (query: string) =>
+      spaceMemberCandidates(workspace, members, query).map((entry) => entry.userId);
+    expect(ids("")).toEqual(["usr_d", "usr_x"]);
+    expect(ids(" ACME ")).toEqual(["usr_d"]);
+    expect(ids("xi")).toEqual(["usr_x"]);
+    expect(ids("bo")).toEqual([]);
+  });
+});
+
+describe("spaceEnvironmentWarnings", () => {
+  it("collects distinct warnings of the space's live environments", () => {
+    const warning = "Codex and OpenCode are unavailable in shared spaces.";
+    expect(
+      spaceEnvironmentWarnings("spc_1", [
+        { spaceId: "spc_1", status: "running", warnings: [warning] },
+        { spaceId: "spc_1", status: "stopped", warnings: [` ${warning} `, ""] },
+        { spaceId: "spc_1", status: "archived", warnings: ["Old"] },
+        { spaceId: "spc_2", status: "running", warnings: ["Other space"] },
+        { spaceId: "spc_1", status: "running" },
+      ]),
+    ).toEqual([warning]);
   });
 });

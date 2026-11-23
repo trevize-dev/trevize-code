@@ -36,6 +36,7 @@ import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "./commands";
 import { SpaceIconPicker } from "./SpaceIconPicker";
+import { SpaceVisibilityToggle } from "./SpaceMembersDialog";
 import { useSpaces, type Space } from "./Spaces";
 
 /** Opens a space's settings from anywhere (space menu, command palette). */
@@ -120,8 +121,10 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
   const [saving, setSaving] = useState(false);
   const nameId = useId();
   const instructionsId = useId();
+  const canEdit = TrevizeSpaces.canOperateSpace(space);
+  const canManage = TrevizeSpaces.canManageSpace(space);
   const patch = TrevizeSpaces.spaceSettingsPatch(space, draft);
-  const canSave = patch !== null && draft.name.trim().length > 0 && !saving;
+  const canSave = canEdit && patch !== null && draft.name.trim().length > 0 && !saving;
 
   const save = async () => {
     if (!canSave) return;
@@ -157,7 +160,12 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
               void save();
             }}
           >
-            <fieldset disabled={saving} className="space-y-6">
+            <fieldset disabled={saving || !canEdit} className="space-y-6">
+              {canEdit ? null : (
+                <p className="text-sm text-muted-foreground">
+                  <T>You're a viewer in this space, so its settings are read-only.</T>
+                </p>
+              )}
               <Row
                 label={gt("Name and icon")}
                 htmlFor={nameId}
@@ -232,37 +240,59 @@ function SpaceSettingsDialog(props: { readonly space: Space; readonly onClose: (
                   </NumberField>
                 }
               />
+
+              {TrevizeSpaces.spaceHasMembers(space) ? (
+                <Row
+                  label={gt("Who can see it")}
+                  description={
+                    canManage
+                      ? gt(
+                          "Workspace members outside the space can't see or join it when it's members only.",
+                        )
+                      : gt("Only owners can change who sees the space.")
+                  }
+                  control={
+                    <SpaceVisibilityToggle
+                      value={draft.visibility}
+                      disabled={saving || !canManage}
+                      onChange={(visibility) => setDraft((current) => ({ ...current, visibility }))}
+                    />
+                  }
+                />
+              ) : null}
             </fieldset>
             {/* Lets Enter in the name field save. */}
             <button type="submit" hidden />
           </form>
 
-          <div className="mt-6 flex items-center justify-between gap-6 border-t border-border pt-6">
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-sm font-medium">
-                <T>Archive space</T>
+          {canManage ? (
+            <div className="mt-6 flex items-center justify-between gap-6 border-t border-border pt-6">
+              <div className="min-w-0 space-y-0.5">
+                <div className="text-sm font-medium">
+                  <T>Archive space</T>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  <T>
+                    Hides the space and stops its sandboxes. Trevize keeps its history and{" "}
+                    <code>/shared</code> files.
+                  </T>
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                <T>
-                  Hides the space and stops its sandboxes. Trevize keeps its history and{" "}
-                  <code>/shared</code> files.
-                </T>
-              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                onClick={() => {
+                  void archiveSpace(space).then((archived) => {
+                    if (archived) onClose();
+                  });
+                }}
+              >
+                <ArchiveIcon />
+                <T>Archive</T>
+              </Button>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={saving}
-              onClick={() => {
-                void archiveSpace(space).then((archived) => {
-                  if (archived) onClose();
-                });
-              }}
-            >
-              <ArchiveIcon />
-              <T>Archive</T>
-            </Button>
-          </div>
+          ) : null}
         </DialogPanel>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" size="sm" disabled={saving} />}>

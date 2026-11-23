@@ -3,7 +3,11 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { TrevizeRepositoryNotConnectedError, TrevizeSpaces } from "@t3tools/client-runtime/trevize";
+import {
+  TrevizeRepositoryNotConnectedError,
+  TrevizeSpaces,
+  type TrevizeApi,
+} from "@t3tools/client-runtime/trevize";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { msg, T, useGT } from "gt-react";
@@ -47,6 +51,7 @@ import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { describeCloudPlacement, openTrevizePage, useTrevizeClientSettings } from "./cloudSessions";
 import * as Trevize from "./commands";
+import { SpaceVisibilityToggle } from "./SpaceMembersDialog";
 import { useNewSpaceDialogStore } from "./Spaces";
 
 const isRepositoryNotConnected = Schema.is(TrevizeRepositoryNotConnectedError);
@@ -181,6 +186,7 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
   const [instructions, setInstructions] = useState("");
   const [maxEnvironments, setMaxEnvironments] = useState(TrevizeSpaces.DEFAULT_SPACE_ENVIRONMENTS);
   const [model, setModel] = useState<OrchestratorModelChoice | null>(null);
+  const [visibility, setVisibility] = useState<TrevizeApi.TrevizeSpaceVisibility>("private");
   const [saving, setSaving] = useState(false);
   const nameId = useId();
   const instructionsId = useId();
@@ -205,6 +211,7 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
       instructions,
       repositoryIds: [...picked],
       maxEnvironments,
+      visibility,
       orchestratorModel: model ? { provider: model.provider, model: model.model } : null,
     });
     setSaving(false);
@@ -347,6 +354,21 @@ function NewSpaceDialog({ onClose }: { readonly onClose: () => void }) {
                   placeholder={gt("Conventions, constraints and goals for this space.")}
                   value={instructions}
                   onChange={(event) => setInstructions(event.target.value)}
+                />
+              </Field>
+
+              <Field
+                label={gt("Who can see it")}
+                hint={
+                  visibility === "private"
+                    ? gt("Only you at first. Add people from the space's Members panel.")
+                    : gt("Everyone in the workspace can open it and work in it.")
+                }
+              >
+                <SpaceVisibilityToggle
+                  value={visibility}
+                  disabled={saving}
+                  onChange={setVisibility}
                 />
               </Field>
 
