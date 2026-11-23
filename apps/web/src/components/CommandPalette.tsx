@@ -85,6 +85,7 @@ import {
   SquarePenIcon,
   TextSearchIcon,
   UserPlusIcon,
+  UsersIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
@@ -129,6 +130,8 @@ import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
+import { TrevizeSpaces } from "@t3tools/client-runtime/trevize";
+import { openSpaceMembers } from "../trevize/SpaceMembersDialog";
 import { openSpaceSettings } from "../trevize/SpaceSettingsDialog";
 import { SpaceBadge, openNewSpaceDialog, useSpaces } from "../trevize/Spaces";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -1764,7 +1767,8 @@ function OpenCommandPaletteDialog(props: {
         ],
       });
     }
-    if (spaces.length > 0) {
+    const editableSpaces = spaces.filter(TrevizeSpaces.canOperateSpace);
+    if (editableSpaces.length > 0) {
       actionItems.push({
         kind: "submenu",
         value: "action:space-settings",
@@ -1776,7 +1780,7 @@ function OpenCommandPaletteDialog(props: {
           {
             value: "space-settings",
             label: gt("Spaces"),
-            items: spaces.map((space) => ({
+            items: editableSpaces.map((space) => ({
               kind: "action",
               value: `space-settings:${space.id}`,
               title: space.name,
@@ -1784,6 +1788,33 @@ function OpenCommandPaletteDialog(props: {
               icon: <SpaceBadge space={space} />,
               run: async () => {
                 openSpaceSettings(space.id);
+              },
+            })),
+          },
+        ],
+      });
+    }
+    const memberSpaces = spaces.filter(TrevizeSpaces.spaceHasMembers);
+    if (memberSpaces.length > 0) {
+      actionItems.push({
+        kind: "submenu",
+        value: "action:space-members",
+        searchTerms: ["space members", "invite", "share space", "leave space", "space"],
+        title: gt("Space members"),
+        icon: <UsersIcon className={ITEM_ICON_CLASS} />,
+        addonIcon: <UsersIcon className={ADDON_ICON_CLASS} />,
+        groups: [
+          {
+            value: "space-members",
+            label: gt("Spaces"),
+            items: memberSpaces.map((space) => ({
+              kind: "action",
+              value: `space-members:${space.id}`,
+              title: space.name,
+              searchTerms: [space.name, "space members"],
+              icon: <SpaceBadge space={space} />,
+              run: async () => {
+                openSpaceMembers(space.id);
               },
             })),
           },

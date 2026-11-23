@@ -9,6 +9,7 @@ import { retainThreadFindForRoute } from "../components/chat/threadFindStore";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { useShownThreadRouteTarget } from "../hooks/useShownThreadRouteTarget";
 import { NewSpaceDialogHost } from "~/trevize/NewSpaceDialog";
+import { SpaceMembersDialogHost } from "~/trevize/SpaceMembersDialog";
 import { SpaceSettingsDialogHost } from "~/trevize/SpaceSettingsDialog";
 
 function ChatRouteLayout() {
@@ -18,6 +19,7 @@ function ChatRouteLayout() {
     <>
       <NewSpaceDialogHost />
       <SpaceSettingsDialogHost />
+      <SpaceMembersDialogHost />
       {shownTarget?.kind === "server" && !modalOpen ? (
         <ThreadLinkPrompt threadRef={shownTarget.threadRef} />
       ) : null}

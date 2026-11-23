@@ -245,3 +245,41 @@ export const archiveSession = createRuntimeCommand(connectionAtomRuntime, {
   execute: (environmentId: EnvironmentId) =>
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.archiveSession(environmentId))),
 });
+
+const withSync = <A, E>(
+  f: (sync: TrevizeSync.TrevizeCloudSync["Service"]) => Effect.Effect<A, E>,
+) => TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap(f));
+
+/** A space's listed members; refresh it when its members dialog opens and after changes. */
+export const spaceMembersAtom = Atom.family((spaceId: string) =>
+  connectionAtomRuntime
+    .atom(withSync((sync) => sync.listSpaceMembers(spaceId)))
+    .pipe(Atom.withLabel(`trevize-space-members:${spaceId}`)),
+);
+
+/** Whom a workspace's spaces can add. */
+export const workspaceMembersAtom = Atom.family((workspaceId: string) =>
+  connectionAtomRuntime
+    .atom(withSync((sync) => sync.listWorkspaceMembers(workspaceId)))
+    .pipe(Atom.withLabel(`trevize-workspace-members:${workspaceId}`)),
+);
+
+/** Adds a workspace member to a space or changes their role. */
+export const setSpaceMember = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:set-space-member",
+  execute: (input: {
+    readonly spaceId: string;
+    readonly userId: string;
+    readonly role: TrevizeApi.TrevizeSpaceRole;
+  }) => withSync((sync) => sync.setSpaceMember(input)),
+});
+
+/** Removes someone from a space, or leaves it (`leaving`). */
+export const removeSpaceMember = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:remove-space-member",
+  execute: (input: {
+    readonly spaceId: string;
+    readonly userId: string;
+    readonly leaving: boolean;
+  }) => withSync((sync) => sync.removeSpaceMember(input)),
+});

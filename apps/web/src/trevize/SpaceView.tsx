@@ -6,7 +6,7 @@ import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/enviro
 import { TrevizeSpaces, type TrevizeApi } from "@t3tools/client-runtime/trevize";
 import { useNavigate } from "@tanstack/react-router";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { ArchiveIcon, MoreHorizontalIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import { ArchiveIcon, MoreHorizontalIcon, PlusIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
@@ -37,6 +37,7 @@ import { useEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "./commands";
 import { savedThreadRef, useSpaceThreadTarget } from "./SpacePanel";
+import { openSpaceMembers } from "./SpaceMembersDialog";
 import { openSpaceSettings, useArchiveSpace } from "./SpaceSettingsDialog";
 import {
   SpaceBadge,
@@ -121,6 +122,8 @@ function SpaceContent({
   readonly state: SpacesState;
 }) {
   const navigate = useNavigate();
+  const gt = useGT();
+  const canOperate = TrevizeSpaces.canOperateSpace(space);
   const threads = TrevizeSpaces.spaceThreads(space.id, state.threads, state.environments);
   const agents = TrevizeSpaces.spaceAgents(space, state.threads, state.environments);
   const orchestrator = TrevizeSpaces.findOrchestratorThread(space, threads);
@@ -195,7 +198,9 @@ function SpaceContent({
       onSelect={selectTab}
       onClose={closeTab}
       onOpenAgent={openAgent}
-      onNewAgent={newAgentProject === null ? null : () => void handleNewThread(newAgentProject)}
+      onNewAgent={
+        newAgentProject === null || !canOperate ? null : () => void handleNewThread(newAgentProject)
+      }
     />
   );
 
@@ -207,6 +212,13 @@ function SpaceContent({
           threadId={ref.threadId}
           routeKind="server"
           titleRow={titleRow}
+          {...(canOperate
+            ? {}
+            : {
+                readOnlyReason: gt(
+                  "You're a viewer in this space. Ask an owner for member access to send messages.",
+                ),
+              })}
         />
       </SidebarInset>
     );
@@ -475,6 +487,10 @@ function AgentPicker(props: {
 function SpaceMenu({ space }: { readonly space: Space }) {
   const gt = useGT();
   const archive = useArchiveSpace();
+  const hasMembers = TrevizeSpaces.spaceHasMembers(space);
+  const canOperate = TrevizeSpaces.canOperateSpace(space);
+  const canManage = TrevizeSpaces.canManageSpace(space);
+  if (!hasMembers && !canOperate) return null;
   return (
     <Menu>
       <MenuTrigger
@@ -489,14 +505,24 @@ function SpaceMenu({ space }: { readonly space: Space }) {
         <MoreHorizontalIcon />
       </MenuTrigger>
       <MenuPopup align="end">
-        <MenuItem onClick={() => openSpaceSettings(space.id)}>
-          <SettingsIcon />
-          <T>Space settings…</T>
-        </MenuItem>
-        <MenuItem variant="destructive" onClick={() => void archive(space)}>
-          <ArchiveIcon />
-          <T>Archive space…</T>
-        </MenuItem>
+        {hasMembers ? (
+          <MenuItem onClick={() => openSpaceMembers(space.id)}>
+            <UsersIcon />
+            <T>Members…</T>
+          </MenuItem>
+        ) : null}
+        {canOperate ? (
+          <MenuItem onClick={() => openSpaceSettings(space.id)}>
+            <SettingsIcon />
+            <T>Space settings…</T>
+          </MenuItem>
+        ) : null}
+        {canManage ? (
+          <MenuItem variant="destructive" onClick={() => void archive(space)}>
+            <ArchiveIcon />
+            <T>Archive space…</T>
+          </MenuItem>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

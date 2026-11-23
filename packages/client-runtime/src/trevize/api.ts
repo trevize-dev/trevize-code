@@ -74,7 +74,10 @@ export const TrevizeEnvironment = Schema.Struct({
   error: Schema.optional(Schema.NullOr(Schema.String)),
   /** The space this environment runs for; absent on servers without spaces. */
   spaceId: Schema.optional(Schema.NullOr(Schema.String)),
-  /** Non-fatal problems, e.g. a sandbox replaced after a provider failure. */
+  /**
+   * Non-fatal problems, e.g. a sandbox replaced after a provider failure or
+   * providers a shared space cannot use.
+   */
   warnings: Schema.optional(Schema.Array(Schema.String)),
   /** Start progress while one is in flight; absent on older servers. */
   start: Schema.optional(Schema.NullOr(TrevizeEnvironmentStart)),
@@ -111,6 +114,14 @@ export const TrevizeThread = Schema.Struct({
 });
 export type TrevizeThread = typeof TrevizeThread.Type;
 
+/** A space member's role; owners manage members, viewers only read. */
+export const TrevizeSpaceRole = Schema.Literals(["owner", "member", "viewer"]);
+export type TrevizeSpaceRole = typeof TrevizeSpaceRole.Type;
+
+/** `private`: only the space's members see it; `workspace`: every workspace member does. */
+export const TrevizeSpaceVisibility = Schema.Literals(["private", "workspace"]);
+export type TrevizeSpaceVisibility = typeof TrevizeSpaceVisibility.Type;
+
 /**
  * A space (`GET /spaces`): an orchestrator chat plus the environments it runs
  * agents in, all sharing a `/shared` volume. `orchestratorThreadId` is a
@@ -134,8 +145,37 @@ export const TrevizeSpace = Schema.Struct({
   archivedAt: Schema.optional(Schema.NullOr(Schema.String)),
   /** Absent on servers from before the sandbox limit. */
   maxEnvironments: Schema.optional(Schema.Number),
+  /** Absent on servers from before space members, where every space is workspace-wide. */
+  visibility: Schema.optional(TrevizeSpaceVisibility),
+  /** The caller's effective role; absent on servers from before space members. */
+  role: Schema.optional(TrevizeSpaceRole),
 });
 export type TrevizeSpace = typeof TrevizeSpace.Type;
+
+/** A listed member of a space (`GET /spaces/{id}/members`). */
+export const TrevizeSpaceMember = Schema.Struct({
+  userId: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  email: Schema.NullOr(Schema.String),
+  image: Schema.NullOr(Schema.String),
+  role: TrevizeSpaceRole,
+  addedByUserId: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+  /** True for the caller; absent on servers from before it, where `isSelfSpaceMember` falls back. */
+  self: Schema.optional(Schema.Boolean),
+});
+export type TrevizeSpaceMember = typeof TrevizeSpaceMember.Type;
+
+/** An active workspace member, someone a space can add (`GET /workspaces/{id}/members`). */
+export const TrevizeWorkspaceMember = Schema.Struct({
+  userId: Schema.String,
+  name: Schema.NullOr(Schema.String),
+  email: Schema.NullOr(Schema.String),
+  image: Schema.NullOr(Schema.String),
+  /** The workspace role, e.g. `admin`; not a space role. */
+  role: Schema.String,
+});
+export type TrevizeWorkspaceMember = typeof TrevizeWorkspaceMember.Type;
 
 const TrevizeConnectReady = Schema.Struct({
   status: Schema.Literal("ready"),
@@ -206,6 +246,13 @@ const ThreadsResponse = Schema.Struct({
 const SpacesResponse = Schema.Struct({
   spaces: Schema.Array(TrevizeSpace),
 });
+const SpaceMembersResponse = Schema.Struct({
+  members: Schema.Array(TrevizeSpaceMember),
+});
+const WorkspaceMembersResponse = Schema.Struct({
+  members: Schema.Array(TrevizeWorkspaceMember),
+});
+const RemovedSpaceMember = Schema.Struct({ removed: Schema.Boolean });
 /** Both the public-API auth middleware (`{ error: { message } }`) and oRPC (`{ message }`) shapes. */
 const ErrorBody = Schema.Struct({
   message: Schema.optional(Schema.String),
@@ -696,6 +743,8 @@ export interface TrevizeSpaceInput {
   readonly maxEnvironments?: number;
   /** The orchestrator's model; Trevize launches it with the space. */
   readonly orchestratorModel?: TrevizeOrchestratorModel | null;
+  /** Who sees the space; Trevize defaults to `private`. */
+  readonly visibility?: TrevizeSpaceVisibility;
 }
 
 /** Creates a space. Trevize launches its orchestrator in the background. */
@@ -713,6 +762,7 @@ export const createSpace = Effect.fn("clientRuntime.trevize.createSpace")(functi
         repositoryIds: input.repositoryIds,
         ...(instructions ? { instructions } : {}),
         ...(input.maxEnvironments === undefined ? {} : { maxEnvironments: input.maxEnvironments }),
+        ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
         ...(input.orchestratorModel
           ? {
               orchestrator: {
@@ -734,6 +784,8 @@ export interface TrevizeSpacePatch {
   readonly color?: string | null;
   readonly instructions?: string | null;
   readonly maxEnvironments?: number;
+  /** Owners only. */
+  readonly visibility?: TrevizeSpaceVisibility;
 }
 
 export const updateSpace = Effect.fn("clientRuntime.trevize.updateSpace")(function* (
@@ -760,3 +812,63 @@ export const archiveSpace = Effect.fn("clientRuntime.trevize.archiveSpace")(func
     TrevizeSpace,
   );
 });
+
+const spaceMemberUrl = (config: TrevizeApiConfig, spaceId: string, userId: string) =>
+  apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}/members/${encodeURIComponent(userId)}`);
+
+/** A space's listed members, owners first. In a workspace-wide space everyone else is a member too. */
+export const listSpaceMembers = Effect.fn("clientRuntime.trevize.listSpaceMembers")(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+) {
+  const body = yield* execute(
+    config,
+    HttpClientRequest.get(apiUrl(config, `/spaces/${encodeURIComponent(spaceId)}/members`)),
+    SpaceMembersResponse,
+  );
+  return body.members;
+});
+
+/** Adds a workspace member to a space or changes their role. Owners only. */
+export const setSpaceMember = Effect.fn("clientRuntime.trevize.setSpaceMember")(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+  userId: string,
+  role: TrevizeSpaceRole,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.put(spaceMemberUrl(config, spaceId, userId)).pipe(
+      HttpClientRequest.bodyJsonUnsafe({ role }),
+    ),
+    TrevizeSpaceMember,
+  );
+});
+
+/** Removes someone from a space; anyone may remove themselves. */
+export const removeSpaceMember = Effect.fn("clientRuntime.trevize.removeSpaceMember")(function* (
+  config: TrevizeApiConfig,
+  spaceId: string,
+  userId: string,
+) {
+  const body = yield* execute(
+    config,
+    HttpClientRequest.delete(spaceMemberUrl(config, spaceId, userId)),
+    RemovedSpaceMember,
+  );
+  return body.removed;
+});
+
+/** The workspace's active members, whom its spaces can add. */
+export const listWorkspaceMembers = Effect.fn("clientRuntime.trevize.listWorkspaceMembers")(
+  function* (config: TrevizeApiConfig, workspaceId: string) {
+    const body = yield* execute(
+      config,
+      HttpClientRequest.get(
+        apiUrl(config, `/workspaces/${encodeURIComponent(workspaceId)}/members`),
+      ),
+      WorkspaceMembersResponse,
+    );
+    return body.members;
+  },
+);
