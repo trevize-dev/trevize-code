@@ -119,8 +119,8 @@ export function useTrevizeStartBannerItem(input: {
               <p className="pb-1.5 text-muted-foreground text-xs">
                 <T>
                   The old sandbox failed on the provider. Trevize is starting a new one from your
-                  pushed branches. Unpushed changes and earlier conversations on the old sandbox are
-                  lost.
+                  pushed branches. Unpushed changes and earlier conversations are not in the new
+                  one; the old sandbox is kept for 7 days in case the provider can recover it.
                 </T>
               </p>
             ) : null}

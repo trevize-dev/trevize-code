@@ -3189,7 +3189,7 @@
   "2aa2bc2d26f9939a": "Väcker sandlådan",
   "d3d88b57e60bcc26": "Steg {current} av {total}: {step}",
   "5c3e33c17a1c7cf2": "Väck",
-  "776057f2250be445": "Den gamla sandlådan slutade fungera hos leverantören. Trevize startar en ny från dina pushade grenar. Opushade ändringar och tidigare konversationer i den gamla sandlådan har gått förlorade.",
+  "7626b65e387503a3": "Den gamla sandlådan slutade fungera hos leverantören. Trevize startar en ny från dina pushade grenar. Opushade ändringar och tidigare konversationer finns inte i den nya; den gamla sandlådan sparas i 7 dagar ifall leverantören kan återställa den.",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",

@@ -3189,7 +3189,7 @@
   "2aa2bc2d26f9939a": "Waking the sandbox",
   "d3d88b57e60bcc26": "Step {current} of {total}: {step}",
   "5c3e33c17a1c7cf2": "Wake",
-  "776057f2250be445": "The old sandbox failed on the provider. Trevize is starting a new one from your pushed branches. Unpushed changes and earlier conversations on the old sandbox are lost.",
+  "7626b65e387503a3": "The old sandbox failed on the provider. Trevize is starting a new one from your pushed branches. Unpushed changes and earlier conversations are not in the new one; the old sandbox is kept for 7 days in case the provider can recover it.",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",

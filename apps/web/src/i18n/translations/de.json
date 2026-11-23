@@ -3190,7 +3190,7 @@
   "2aa2bc2d26f9939a": "Sandbox wird aufgeweckt",
   "d3d88b57e60bcc26": "Schritt {current} von {total}: {step}",
   "5c3e33c17a1c7cf2": "Aufwecken",
-  "776057f2250be445": "Die alte Sandbox ist beim Anbieter ausgefallen. Trevize startet eine neue aus deinen gepushten Branches. Nicht gepushte Änderungen und frühere Unterhaltungen der alten Sandbox sind verloren.",
+  "7626b65e387503a3": "Die alte Sandbox ist beim Anbieter ausgefallen. Trevize startet eine neue aus deinen gepushten Branches. Nicht gepushte Änderungen und frühere Unterhaltungen sind nicht in der neuen; die alte Sandbox wird 7 Tage aufbewahrt, falls der Anbieter sie wiederherstellen kann.",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",

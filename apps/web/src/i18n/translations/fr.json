@@ -3189,7 +3189,7 @@
   "2aa2bc2d26f9939a": "Réveil de la sandbox",
   "d3d88b57e60bcc26": "Étape {current} sur {total} : {step}",
   "5c3e33c17a1c7cf2": "Réveiller",
-  "776057f2250be445": "L'ancienne sandbox a échoué chez le fournisseur. Trevize en démarre une nouvelle à partir de vos branches poussées. Les modifications non poussées et les conversations précédentes de l'ancienne sandbox sont perdues.",
+  "7626b65e387503a3": "L'ancienne sandbox a échoué chez le fournisseur. Trevize en démarre une nouvelle à partir de vos branches poussées. Les modifications non poussées et les conversations précédentes ne sont pas dans la nouvelle ; l'ancienne sandbox est conservée 7 jours au cas où le fournisseur pourrait la récupérer.",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",
