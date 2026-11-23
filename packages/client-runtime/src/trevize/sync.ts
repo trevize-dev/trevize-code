@@ -29,6 +29,7 @@ import {
   createEnvironment as createTrevizeEnvironment,
   createSpace as createTrevizeSpace,
   dispatchThread,
+  getEnvironment,
   sendThreadMessage,
   updateSpace as updateTrevizeSpace,
   wakeWhenReady,
@@ -43,6 +44,8 @@ import {
   setSpaceMember as setTrevizeSpaceMember,
   type TrevizeApiConfig,
   type TrevizeEnvironment,
+  type TrevizeEnvironmentStatus,
+  type TrevizeWakeProgress,
   type TrevizeSpace,
   type TrevizeSpaceInput,
   type TrevizeSpaceMember,
@@ -170,6 +173,47 @@ export function planTrevizeSync(input: TrevizeSyncInput): TrevizeSyncPlan {
 }
 
 /**
+ * Where a saved Trevize environment that is not running stands, as Trevize
+ * last reported it: asleep, starting (with the start's phase), or failed.
+ */
+export interface TrevizeStartProgress {
+  readonly status: Exclude<TrevizeEnvironmentStatus, "running" | "archived">;
+  /** The start's phase (see `TrevizeEnvironmentStart`); null when unknown. */
+  readonly phase: string | null;
+  /** The sandbox broke on the provider; the start rebuilds it on a new one. */
+  readonly recovering: boolean;
+  /** Why the last start failed (`failed` only). */
+  readonly error: string | null;
+}
+
+/** Whether Trevize is starting the environment right now. */
+export function isTrevizeStartInFlight(progress: TrevizeStartProgress): boolean {
+  return progress.status === "provisioning" || progress.status === "starting";
+}
+
+/** Start progress from a listing; null while the environment runs or is archived. */
+function startProgressFromEnvironment(
+  environment: TrevizeEnvironment,
+): TrevizeStartProgress | null {
+  if (environment.status === "running" || environment.status === "archived") return null;
+  return {
+    status: environment.status,
+    phase: environment.start?.phase ?? null,
+    recovering: environment.start?.recovering ?? false,
+    error: environment.status === "failed" ? (environment.error ?? null) : null,
+  };
+}
+
+/** Start progress from one `wake` poll; null once the environment runs. */
+function startProgressFromWake(wake: TrevizeWakeProgress): TrevizeStartProgress | null {
+  if (wake.status === "ready" || wake.status === "running") return null;
+  if (wake.status === "failed") {
+    return { status: "failed", phase: null, recovering: false, error: wake.error };
+  }
+  return { status: "starting", phase: wake.phase, recovering: wake.recovering, error: null };
+}
+
+/**
  * Saved environments that run one-off cloud sessions: Trevize environments
  * outside spaces, which Trevize itself treats as single tasks. New threads
  * never default to them, and they archive instead of settling.
@@ -198,6 +242,11 @@ export interface TrevizeCloudSyncState {
   readonly sleeping: ReadonlyMap<EnvironmentId, TrevizeEnvironment>;
   /** Saved environments a wake is in flight for. */
   readonly waking: ReadonlySet<EnvironmentId>;
+  /**
+   * Saved Trevize environments that are not running, with what Trevize
+   * reports about them. Refreshed every few seconds while a start runs.
+   */
+  readonly progress: ReadonlyMap<EnvironmentId, TrevizeStartProgress>;
   /** Saved environments of one-off cloud sessions (`findCloudSessionEnvironments`). */
   readonly sessionEnvironments: ReadonlyMap<EnvironmentId, TrevizeEnvironment>;
   /** Workspaces whose Trevize offers spaces; empty means spaces are unavailable. */
@@ -223,6 +272,7 @@ export const EMPTY_TREVIZE_CLOUD_SYNC_STATE: TrevizeCloudSyncState = {
   environments: [],
   sleeping: new Map(),
   waking: new Set(),
+  progress: new Map(),
   sessionEnvironments: new Map(),
   spaceWorkspaceIds: [],
   spaces: [],
@@ -355,6 +405,8 @@ export class TrevizeCloudSync extends Context.Service<
 >()("@t3tools/client-runtime/trevize/sync/TrevizeCloudSync") {}
 
 const SYNC_INTERVAL = Duration.seconds(30);
+/** How often a start's progress is polled while one runs. */
+const START_PROGRESS_INTERVAL = Duration.seconds(3);
 /** Background pairing only targets running environments, so this is short. */
 const PAIR_MAX_WAIT_MS = 30_000;
 
@@ -524,6 +576,12 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
         rejectedCredentials.add(environmentId);
       }
     }
+    const progress = new Map<EnvironmentId, TrevizeStartProgress>();
+    for (const environment of environments) {
+      const environmentId = findSavedTrevizeEnvironment(saved, environment.httpBaseUrl);
+      const entry = startProgressFromEnvironment(environment);
+      if (environmentId !== null && entry !== null) progress.set(environmentId, entry);
+    }
     const plan = planTrevizeSync({
       environments,
       saved,
@@ -612,6 +670,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       error: null,
       environments,
       sleeping,
+      progress,
       sessionEnvironments,
       workspaces,
       connectedRepositories,
@@ -649,6 +708,14 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       ),
     );
 
+  const setProgress = (environmentId: EnvironmentId, entry: TrevizeStartProgress | null) =>
+    SubscriptionRef.update(state, (current) => {
+      const progress = new Map(current.progress);
+      if (entry === null) progress.delete(environmentId);
+      else progress.set(environmentId, entry);
+      return { ...current, progress };
+    });
+
   const wake = Effect.fn("TrevizeCloudSync.wake")(function* (environmentId: EnvironmentId) {
     if ((yield* Ref.get(waking)).has(environmentId)) return;
     const loaded = yield* loadConfig;
@@ -673,9 +740,10 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     }
     yield* setWaking(environmentId, true);
     yield* Effect.gen(function* () {
-      yield* wakeWhenReady(loaded.value.config, environment.id).pipe(
-        Effect.provideContext(context),
-      );
+      yield* wakeWhenReady(loaded.value.config, environment.id, {
+        onProgress: (wakeProgress) =>
+          setProgress(environmentId, startProgressFromWake(wakeProgress)),
+      }).pipe(Effect.provideContext(context));
       yield* SubscriptionRef.update(state, (latest) => {
         const sleeping = new Map(latest.sleeping);
         sleeping.delete(environmentId);
@@ -985,6 +1053,58 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     );
     yield* syncNow;
   });
+
+  /**
+   * Polls Trevize for saved environments it is starting (woken by the gateway,
+   * another device or Trevize itself; this device's own wakes poll `wake`).
+   * Once one runs, its connection is retried right away instead of waiting
+   * out the connection backoff.
+   */
+  const pollStartProgress = Effect.gen(function* () {
+    const current = yield* SubscriptionRef.get(state);
+    const starting = [...current.progress].filter(
+      ([environmentId, entry]) =>
+        isTrevizeStartInFlight(entry) && !current.waking.has(environmentId),
+    );
+    if (starting.length === 0) return;
+    const loaded = yield* loadConfig;
+    if (Option.isNone(loaded)) return;
+    const saved = [...(yield* SubscriptionRef.get(registry.entries)).values()];
+    yield* Effect.forEach(
+      starting,
+      ([environmentId]) =>
+        Effect.gen(function* () {
+          const listed = current.environments.find(
+            (candidate) =>
+              findSavedTrevizeEnvironment(saved, candidate.httpBaseUrl) === environmentId,
+          );
+          if (listed === undefined) return;
+          const environment = yield* getEnvironment(loaded.value.config, listed.id).pipe(
+            Effect.provideContext(context),
+          );
+          const entry = startProgressFromEnvironment(environment);
+          yield* setProgress(environmentId, entry);
+          if (entry === null) {
+            yield* resumeRetries([environmentId]);
+            yield* syncNow;
+          }
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logDebug("Could not refresh a Trevize environment's start.", {
+              environmentId,
+              error,
+            }),
+          ),
+        ),
+      { concurrency: 4, discard: true },
+    );
+  });
+  yield* Effect.gen(function* () {
+    while (true) {
+      yield* Effect.sleep(START_PROGRESS_INTERVAL);
+      yield* pollStartProgress;
+    }
+  }).pipe(Effect.forkScoped);
 
   // The one sync loop: runs at start, then on request or every interval.
   yield* Effect.gen(function* () {
