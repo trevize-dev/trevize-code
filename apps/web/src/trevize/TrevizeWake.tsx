@@ -14,6 +14,10 @@ import { toastManager } from "~/components/ui/toast";
 import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 import * as Trevize from "./commands";
+import {
+  resolveTrevizeEnvironmentNotice,
+  type TrevizeEnvironmentNotice,
+} from "./startProgress.logic";
 
 export type TrevizeSleepState = "sleeping" | "waking" | null;
 
@@ -31,7 +35,25 @@ export function useTrevizeSleepState(
   return sync.sleeping.has(environmentId) ? "sleeping" : null;
 }
 
-function reportWakeFailure(result: AtomCommandResult<unknown, unknown>) {
+/**
+ * What Trevize reports about a saved environment that is not connected:
+ * asleep, starting (with its step, and whether it is recovering on a new
+ * sandbox), or failed. Null for a connected or non-Trevize environment.
+ */
+export function useTrevizeEnvironmentNotice(
+  environmentId: EnvironmentId | null,
+  connected: boolean,
+): TrevizeEnvironmentNotice | null {
+  const sync = useAtomValue(Trevize.syncStateValueAtom);
+  if (environmentId === null || connected) return null;
+  return resolveTrevizeEnvironmentNotice({
+    progress: sync.progress.get(environmentId),
+    waking: sync.waking.has(environmentId),
+    sleeping: sync.sleeping.has(environmentId),
+  });
+}
+
+export function reportWakeFailure(result: AtomCommandResult<unknown, unknown>) {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
   const error = squashAtomCommandFailure(result);
   toastManager.add({

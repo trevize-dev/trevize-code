@@ -29,6 +29,8 @@ import { Button } from "../ui/button";
 import { ServerUpdateAction, serverUpdateStageLabel } from "../ServerUpdateAction";
 import { useAutoBalanceUpdateBanner } from "./useAutoBalanceUpdateBanner";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
+import { useTrevizeEnvironmentNotice } from "../../trevize/TrevizeWake";
+import { useTrevizeStartBannerItem } from "../../trevize/TrevizeStartBanner";
 import {
   dismissServerUpdateFailure,
   isServerUpdateFailureDismissed,
@@ -117,6 +119,13 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     activeEnvironment.entry.target._tag !== "PrimaryConnectionTarget" &&
     !isDesktopLocalConnectionTarget(activeEnvironment.entry.target);
   const [disconnectingEnvironment, setDisconnectingEnvironment] = useState(false);
+  // A Trevize environment says what its sandbox is doing (asleep, each start
+  // step, a recovery onto a new sandbox, a failed start) instead of the plain
+  // connection notice.
+  const trevizeNotice = useTrevizeEnvironmentNotice(
+    activeEnvironmentUnavailable ? (activeEnvironment?.environmentId ?? null) : null,
+    activeEnvironmentConnectionPhase === "connected",
+  );
   const handleDisconnectActiveEnvironment = async (environmentId: EnvironmentId) => {
     setDisconnectingEnvironment(true);
     const result = await setEnvironmentEnabled({ environmentId, enabled: false });
@@ -162,6 +171,24 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
   const serverUpdateFailureDismissed =
     serverUpdateState === dismissedServerUpdateState ||
     isServerUpdateFailureDismissed(serverUpdateState);
+  const trevizeStartBanner = useTrevizeStartBannerItem({
+    environmentId: activeEnvironment?.environmentId ?? null,
+    notice: trevizeNotice,
+    actions:
+      canDisconnectActiveEnvironment && activeEnvironment ? (
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={disconnectingEnvironment}
+          title={gt("Hide this server's threads. Switch it on again in Environments.")}
+          onClick={() =>
+            void handleDisconnectActiveEnvironmentStable(activeEnvironment.environmentId)
+          }
+        >
+          <T>Disconnect server</T>
+        </Button>
+      ) : undefined,
+  });
   return (() => {
     const items: ComposerBannerStackItem[] = [];
     const updateRunning = serverUpdateState.status === "running";
@@ -195,7 +222,9 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       activeEnvironmentUnavailableState !== null &&
       unavailableConnection !== null &&
       !suppressUnavailableBanner;
-    if (showUnavailableBanner) {
+    if (trevizeStartBanner && !awaitingApproval) {
+      items.push(trevizeStartBanner);
+    } else if (showUnavailableBanner) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
         variant: unavailableConnection.phase === "error" ? "error" : "warning",
