@@ -89,6 +89,8 @@ import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./T
 import { draftRouteIdentity } from "./thread-route-state";
 import { NewTaskDraftRouteScreen, type NewTaskDraftRouteParams } from "./NewTaskDraftRouteScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
+import { useAtomValue } from "@effect/atom-react";
+import { remoteDesktopEnvironment } from "../../state/remoteDesktop";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
@@ -127,12 +129,8 @@ import {
   useWorkspaceBackNavigation,
 } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { openSettings } from "../settings/settings-navigation";
-import {
-  InspectorContentScope,
-  ThreadInspectorHeader,
-  ThreadInspectorPreview,
-  type ThreadInspectorPresentation,
-} from "./thread-inspector-preview";
+import { ThreadInspectorHeader, type ThreadInspectorPresentation } from "./thread-inspector-header";
+import { InspectorContentScope, ThreadInspectorPreview } from "./thread-inspector-preview";
 import { useStartSideChat } from "./useStartSideChat";
 import { useThreadStatusAnnouncements } from "./useThreadStatusAnnouncements";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
@@ -593,7 +591,11 @@ function ThreadRouteContent(
     environmentId: selectedThread?.environmentId ?? null,
     cwd: selectedThreadCwd,
   };
-  const gitActionProgress = useGitActionProgress(gitActionProgressTarget);
+  const gitActionThreadRef =
+    selectedThread === null
+      ? null
+      : { environmentId: selectedThread.environmentId, threadId: selectedThread.id };
+  const gitActionProgress = useGitActionProgress(gitActionProgressTarget, gitActionThreadRef);
 
   const handleOpenGitInspector = () => {
     navigation.setParams({ inspector: undefined });
@@ -728,6 +730,17 @@ function ThreadRouteContent(
     }
   };
 
+  const canOperateDesktop = useAtomValue(
+    remoteDesktopEnvironment.prepare.permissionAtom(selectedThread?.environmentId ?? null),
+  );
+  const handleOpenDesktop = () => {
+    if (!selectedThread || !canOperateDesktop) return;
+    void navigation.navigate("ThreadDesktopPreview", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+    });
+  };
+
   const handleOpenTerminal = (nextTerminalId?: string | null) => {
     if (
       !selectedThread ||
@@ -830,6 +843,7 @@ function ThreadRouteContent(
         ? () => void handleMergeBack()
         : undefined,
     currentBranch: selectedThread?.branch ?? null,
+    tracksRepositories: (selectedThreadProject?.trackedFolders?.length ?? 0) > 0,
     gitStatus: gitStatus.data,
     gitOperationLabel: gitState.gitOperationLabel,
     canOpenTerminal:
@@ -998,7 +1012,12 @@ function ThreadRouteContent(
   // A thread this client is creating has nothing older to sync.
   const threadSyncLabel =
     creationState === null
-      ? threadSyncStatusLabel(selectedThreadDetailState.status, contentPresentation.kind, m)
+      ? threadSyncStatusLabel(
+          selectedThreadDetailState.status,
+          contentPresentation.kind,
+          Option.isSome(selectedThreadDetailState.error),
+          m,
+        )
       : null;
   // Transient states go in the header subtitle so the composer's status slot doesn't jump.
   const threadStatusLabel = useDelayedStatus(
@@ -1026,7 +1045,7 @@ function ThreadRouteContent(
     <>
       <GitActionProgressOverlay
         progress={gitActionProgress}
-        onDismiss={dismissGitActionResult}
+        onDismiss={() => dismissGitActionResult(gitActionThreadRef)}
         onOpenPullRequest={openPullRequest}
       />
 
@@ -1041,6 +1060,11 @@ function ThreadRouteContent(
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}
                 onOpenFilesInspector={handleOpenFilesInspector}
+                onOpenDesktop={
+                  serverConfig?.environment.capabilities.remoteDesktop === true && canOperateDesktop
+                    ? handleOpenDesktop
+                    : undefined
+                }
                 onReturnToThread={props.onReturnToThread}
               />
             )

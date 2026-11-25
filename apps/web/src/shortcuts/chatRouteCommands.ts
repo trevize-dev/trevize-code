@@ -23,7 +23,12 @@ import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/pro
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { readProjects, readThreadShell } from "../state/entities";
+import {
+  readEnvironmentSupportsRemoteDesktop,
+  readProjects,
+  readThreadShell,
+} from "../state/entities";
+import { remoteDesktopEnvironment } from "../state/remoteDesktop";
 import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { environmentPresentations } from "../state/presentation";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
@@ -91,6 +96,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         useUiStateStore.getState().projectOrder,
         lastUsedProjectKey,
         appAtomRegistry.get(defaultProjectFallbackReadyAtom(lastUsedProjectKey)),
+        selectProjectGroupingSettings(getClientSettings()),
       ),
       handleNewThread,
     };
@@ -180,12 +186,36 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         }
         dispatchPreviewAction("toggle-panel");
       },
+      "desktop.toggle": (event) => {
+        const threadRef = readRouteThreadRef();
+        if (!threadRef) return false;
+        const desktopOpen =
+          selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, threadRef) ===
+          "desktop";
+        if (
+          !desktopOpen &&
+          (!readEnvironmentSupportsRemoteDesktop(threadRef.environmentId) ||
+            !appAtomRegistry.get(
+              remoteDesktopEnvironment.prepare.permissionAtom(threadRef.environmentId),
+            ))
+        ) {
+          return false;
+        }
+        claim(event);
+        useRightPanelStore.getState().toggle(threadRef, "desktop");
+      },
       "preview.refresh": previewCommand("refresh"),
       "preview.focusUrl": previewCommand("focus-url"),
       "preview.zoomIn": zoomCommand("zoom-in"),
       "preview.zoomOut": zoomCommand("zoom-out"),
       "preview.resetZoom": zoomCommand("reset-zoom"),
-      "preview.find": previewCommand("find"),
+      // Unclaimed, the browser's own find runs when no thread handles panel find.
+      "preview.find": (event) => {
+        const environmentId = readRouteEnvironmentId();
+        if (!environmentId || !canOperatePreview(environmentId)) return false;
+        claim(event);
+        dispatchPreviewAction("find");
+      },
     },
     {
       when: () =>

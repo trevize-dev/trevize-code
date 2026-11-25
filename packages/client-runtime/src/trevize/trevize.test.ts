@@ -463,6 +463,7 @@ describe("connectTrevizeEnvironment", () => {
               return EnvironmentId.make("t3-environment");
             }),
           registerSsh: () => Effect.die("unused"),
+          reaches: () => Effect.die("unused"),
           updateBearer: () => Effect.die("unused"),
         }),
       );

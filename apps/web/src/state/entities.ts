@@ -76,6 +76,9 @@ const EMPTY_ASSISTANT_MESSAGE_TEXT_ATOM = Atom.make<string | null>(null).pipe(
 const EMPTY_LAST_VISITED_AT_ATOM = Atom.make<DateTime.Utc | null>(null).pipe(
   Atom.withLabel("web-thread-last-visited:empty"),
 );
+const EMPTY_THREAD_ERROR_ATOM = Atom.make<string | null>(null).pipe(
+  Atom.withLabel("web-thread-error:empty"),
+);
 const EMPTY_UPDATED_AT_ATOM = Atom.make<DateTime.Utc | null>(null).pipe(
   Atom.withLabel("web-thread-updated-at:empty"),
 );
@@ -208,6 +211,12 @@ export function useThreadUpdatedAt(ref: ScopedThreadRef | null): DateTime.Utc | 
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_STATUS_ATOM : environmentThreadDetails.statusAtom(ref),
+  );
+}
+
+export function useThreadError(ref: ScopedThreadRef | null): string | null {
+  return useAtomValue(
+    ref === null ? EMPTY_THREAD_ERROR_ATOM : environmentThreadDetails.errorAtom(ref),
   );
 }
 
@@ -363,6 +372,21 @@ export function readEnvironmentSupportsServerBrowser(environmentId: EnvironmentI
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
       .serverBrowser === true
+  );
+}
+
+export function useEnvironmentSupportsRemoteDesktop(environmentId: EnvironmentId | null): boolean {
+  const configs = useServerConfigs();
+  return (
+    environmentId !== null &&
+    configs.get(environmentId)?.environment.capabilities.remoteDesktop === true
+  );
+}
+
+export function readEnvironmentSupportsRemoteDesktop(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .remoteDesktop === true
   );
 }
 

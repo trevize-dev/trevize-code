@@ -493,17 +493,15 @@ function TrevizeWorkspaceEnvironments({
     return () => clearInterval(timer);
   }, [hasTransitional, refresh]);
 
-  const withBusy = async (id: string, run: () => Promise<void>) => {
+  const withBusy = (id: string, run: () => Promise<void>) => {
     setBusyIds((current) => new Set([...current, id]));
-    try {
-      await run();
-    } finally {
+    return run().finally(() =>
       setBusyIds((current) => {
         const next = new Set(current);
         next.delete(id);
         return next;
-      });
-    }
+      }),
+    );
   };
 
   const connect = (environment: TrevizeApi.TrevizeEnvironment) =>

@@ -41,6 +41,10 @@ vi.mock("@effect/atom-react", async (original) => ({
   useAtomValue: (atom: unknown) =>
     atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
 }));
+vi.mock("../trevize/Spaces", async (original) => ({
+  ...(await original<typeof import("../trevize/Spaces")>()),
+  useSpaces: () => ({ available: false, spaces: [], threads: [], environments: [], loaded: true }),
+}));
 vi.mock("../hooks/useTheme", () => ({
   useRenderedAppearance: () => "light",
   useTheme: () => ({ theme: "t3-chat", resolvedTheme: "light", appearanceMode: "light" }),
@@ -72,7 +76,8 @@ vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => ({ _tag: "Success", value: { projectId: "project-cloned" } }),
 }));
 vi.mock("../state/use-atom-query-runner", () => ({
-  useAtomQueryRunner: () => async () => ({ _tag: "Success", value: undefined }),
+  // Doubles as the add-project folder scan, which finds nothing to track.
+  useAtomQueryRunner: () => async () => ({ _tag: "Success", value: { folders: [] } }),
 }));
 vi.mock("../state/environments", async (original) => ({
   ...(await original<typeof import("../state/environments")>()),

@@ -58,7 +58,7 @@ describe("environment release checks", () => {
   const signal = new AbortController().signal;
   const feed = (...tags: ReadonlyArray<string>) =>
     new Response(
-      `<feed><id>tag:github.com,2008:https://github.com/pingdotgg/t3code/releases</id>${tags
+      `<feed><id>tag:github.com,2008:https://github.com/trevize-dev/trevize-code/releases</id>${tags
         .map((tag) => `<entry><id>tag:github.com,2008:Repository/1/${tag}</id></entry>`)
         .join("")}</feed>`,
     );
@@ -67,13 +67,13 @@ describe("environment release checks", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) =>
-        url === "https://github.com/pingdotgg/t3code/releases.atom"
+        url === "https://github.com/trevize-dev/trevize-code/releases.atom"
           ? feed(
               "desktop-preview",
-              "v1.0.0-preview.20260924.3",
-              "v1.0.0-nightly.20260924.2",
-              "v1.0.0",
-              "v1.0.0-nightly.20260923.1",
+              "trevize-v1.0.0-preview.20260924.3",
+              "trevize-v1.0.0-nightly.20260924.2",
+              "trevize-v1.0.0",
+              "trevize-v1.0.0-nightly.20260923.1",
             )
           : new Response(null, { status: 403 }),
       ),
@@ -89,18 +89,25 @@ describe("environment release checks", () => {
   });
 
   it("finds a published preview beyond the ten-entry feed and first API page", async () => {
-    const nightlies = Array.from({ length: 10 }, (_, i) => `v1.0.0-nightly.20260930.${i}`);
+    const nightlies = Array.from({ length: 10 }, (_, i) => `trevize-v1.0.0-nightly.20260930.${i}`);
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url === "https://github.com/pingdotgg/t3code/releases.atom") return feed(...nightlies);
-        if (url === "https://api.github.com/repos/pingdotgg/t3code/releases?per_page=100&page=1") {
-          return Response.json(Array.from({ length: 100 }, () => ({ tag_name: "v2.0.0" })));
+        if (url === "https://github.com/trevize-dev/trevize-code/releases.atom")
+          return feed(...nightlies);
+        if (
+          url ===
+          "https://api.github.com/repos/trevize-dev/trevize-code/releases?per_page=100&page=1"
+        ) {
+          return Response.json(Array.from({ length: 100 }, () => ({ tag_name: "trevize-v2.0.0" })));
         }
-        if (url === "https://api.github.com/repos/pingdotgg/t3code/releases?per_page=100&page=2") {
+        if (
+          url ===
+          "https://api.github.com/repos/trevize-dev/trevize-code/releases?per_page=100&page=2"
+        ) {
           return Response.json([
-            { tag_name: "v1.0.0-preview.20260925.1", draft: true },
-            { tag_name: "v1.0.0-preview.20260924.3" },
+            { tag_name: "trevize-v1.0.0-preview.20260925.1", draft: true },
+            { tag_name: "trevize-v1.0.0-preview.20260924.3" },
           ]);
         }
         throw new Error(`Unexpected release request: ${url}`);
@@ -119,7 +126,9 @@ describe("environment release checks", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) =>
-        url.endsWith(".atom") ? feed("v1.0.0") : Response.json([{ tag_name: "v1.0.0" }]),
+        url.endsWith(".atom")
+          ? feed("trevize-v1.0.0")
+          : Response.json([{ tag_name: "trevize-v1.0.0" }]),
       ),
     );
     await expect(findEnvironmentUpdate("1.0.0-nightly.20260923.1", signal)).rejects.toThrow(

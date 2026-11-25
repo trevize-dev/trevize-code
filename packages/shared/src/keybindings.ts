@@ -20,6 +20,7 @@ export {
   shortcutKeyFromEvent,
   type ShortcutEventLike,
   type ShortcutModifierStateLike,
+  type ShortcutKeyboardLayoutMap,
 } from "./keybindingMatching.ts";
 
 export const US_SHIFTED_TO_UNSHIFTED_KEYS: ReadonlyMap<string, string> = new Map([
@@ -72,10 +73,13 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+d", command: "composer.dictation", when: "!terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
+  { key: "ctrl+alt+[", command: "terminal.previous", when: "terminalFocus && !isMac" },
+  { key: "ctrl+alt+]", command: "terminal.next", when: "terminalFocus && !isMac" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+shift+t", command: "view.reopenClosed" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },
+  { key: "mod+alt+shift+d", command: "desktop.toggle" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
   { key: "mod+=", command: "preview.zoomIn", when: "previewFocus" },
@@ -127,6 +131,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
+  { key: "cmd+shift+[", command: "terminal.previous", when: "terminalFocus && isMac" },
+  { key: "cmd+shift+]", command: "terminal.next", when: "terminalFocus && isMac" },
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
   { key: "mod+shift+p", command: "thread.pin", when: "!terminalFocus" },
@@ -167,8 +173,10 @@ export function parseKeybindingShortcut(value: string): KeybindingShortcut | nul
     trailingEmptyCount += 1;
     tokens.pop();
   }
-  if (trailingEmptyCount > 0) {
+  if (trailingEmptyCount === 2) {
     tokens.push("+");
+  } else if (trailingEmptyCount !== 0) {
+    return null;
   }
   if (tokens.some((token) => token.length === 0)) {
     return null;

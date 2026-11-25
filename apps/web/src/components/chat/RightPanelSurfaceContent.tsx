@@ -16,7 +16,7 @@ import {
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { FolderLockIcon, SquareTerminalIcon } from "lucide-react";
+import { FolderLockIcon, MonitorIcon, SquareTerminalIcon } from "lucide-react";
 
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
@@ -35,7 +35,8 @@ import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
-import SideChatPane from "./SideChatPane";
+import { LinkedThreadPane } from "./LinkedThreadPane";
+import SideThreadPane from "./SideThreadPane";
 
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({
@@ -46,6 +47,11 @@ const DiffPanel = lazy(() => import("../DiffPanel"));
 const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({
     default: module.DevicePanel,
+  })),
+);
+const DesktopPanel = lazy(() =>
+  import("../desktop/DesktopPanel").then((module) => ({
+    default: module.DesktopPanel,
   })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
@@ -85,6 +91,8 @@ export function RightPanelSurfaceContent(props: {
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly configuredPreviewUrls: ReadonlyArray<string>;
   readonly workspaceMutationId: string | null;
+  /** What the diff is read under, as the Changes totals are; see `useWorkspaceRevision`. */
+  readonly workspaceRevision: string | null;
   readonly getShortcutContext: () => ShortcutMatchContext;
   readonly onSendAnnotation: (
     annotation: PreviewAnnotationPayload,
@@ -94,6 +102,7 @@ export function RightPanelSurfaceContent(props: {
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
   readonly issuesSupported: boolean;
+  readonly remoteDesktopSupported?: boolean;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
 }) {
@@ -162,7 +171,7 @@ export function RightPanelSurfaceContent(props: {
             key={scopedThreadKey(threadRef)}
             mode="embedded"
             composerDraftTarget={props.composerDraftTarget}
-            workspaceMutationId={props.workspaceMutationId}
+            workspaceMutationId={props.workspaceRevision}
             visible={visible}
           />
         </Suspense>
@@ -183,9 +192,14 @@ export function RightPanelSurfaceContent(props: {
           getShortcutContext={props.getShortcutContext}
           shortcutsEnabled={visible && props.activeSurfaceId === surface.id}
           key={`${scopedThreadKey(threadRef)}:${surface.id}`}
-          environmentId={props.environmentId}
+          environmentId={
+            (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId
+          }
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {
+              ...(surface.environmentId === undefined
+                ? {}
+                : { environmentId: surface.environmentId }),
               projectId: reference.projectId,
               repository: reference.repository,
               number: reference.number,
@@ -247,10 +261,22 @@ export function RightPanelSurfaceContent(props: {
           threadRef={threadRef}
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {
+              ...(surface.environmentId === undefined
+                ? {}
+                : { environmentId: surface.environmentId }),
               projectId: reference.projectId,
               repository: reference.repository,
               number: reference.number,
               ...(reference.host ? { host: reference.host } : {}),
+            });
+          }}
+          onSelectIssue={({ host, ...reference }) => {
+            useRightPanelStore.getState().openIssue(threadRef, {
+              ...(surface.environmentId === undefined
+                ? {}
+                : { environmentId: surface.environmentId }),
+              ...reference,
+              ...(host ? { host } : {}),
             });
           }}
         />
@@ -265,16 +291,53 @@ export function RightPanelSurfaceContent(props: {
           onOpenFile={(path) => useRightPanelStore.getState().openFile(threadRef, path)}
         />
       );
-    case "side-chat":
+    case "thread":
       // Not lazy: revealing a suspended tiptap editor tears down its view and crashes the composer.
       return (
-        <SideChatPane
+        <SideThreadPane
           key={surface.id}
           parentRef={threadRef}
-          threadId={surface.threadId}
+          surface={surface}
           parentPanel={props.sideChatParentPanel}
           onClose={() => onCloseSurface(surface)}
         />
+      );
+    case "linked-thread":
+      return (
+        <LinkedThreadPane
+          key={surface.id}
+          panelRef={threadRef}
+          surface={surface}
+          visible={visible && props.activeSurfaceId === surface.id}
+        />
+      );
+    case "desktop":
+      if (terminalOperateDenied) {
+        return (
+          <SurfaceUnavailable
+            icon={<MonitorIcon />}
+            title={gt("Desktop isn't available")}
+            description={gt("This connection can't open the remote desktop in this environment.")}
+          />
+        );
+      }
+      if (props.remoteDesktopSupported === false) {
+        return (
+          <SurfaceUnavailable
+            icon={<MonitorIcon />}
+            title={gt("Desktop isn't available")}
+            description={gt("Remote desktop isn't configured on this environment.")}
+          />
+        );
+      }
+      return (
+        <Suspense fallback={null}>
+          <DesktopPanel
+            key={props.environmentId}
+            environmentId={props.environmentId}
+            visible={visible}
+          />
+        </Suspense>
       );
     case "device":
       return (
