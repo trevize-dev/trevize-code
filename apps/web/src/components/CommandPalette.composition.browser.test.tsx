@@ -41,6 +41,10 @@ vi.mock("@effect/atom-react", async (original) => ({
   useAtomValue: (atom: unknown) =>
     atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
 }));
+vi.mock("../trevize/Spaces", async (original) => ({
+  ...(await original<typeof import("../trevize/Spaces")>()),
+  useSpaces: () => ({ available: false, spaces: [], threads: [], environments: [], loaded: true }),
+}));
 vi.mock("../hooks/useTheme", () => ({
   useRenderedAppearance: () => "light",
   useTheme: () => ({ theme: "t3-chat", resolvedTheme: "light", appearanceMode: "light" }),
