@@ -395,6 +395,7 @@ const makeHarness = Effect.fn(function* (input: {
                 return environmentId;
               }),
             registerSsh: () => Effect.die("unused"),
+            reaches: () => Effect.die("unused"),
             updateBearer: () => Effect.die("unused"),
           }),
         ),
