@@ -64,13 +64,15 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.TAG }}
-          persist-credentials: false
-          # Like ci.yml: .repos/ holds a nested submodule with no URL, which fails checkout.
           sparse-checkout: |
             /*
             !/.repos/
             !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
           sparse-checkout-cone-mode: false
+
+      # Not `persist-credentials: false`: its cleanup fails on the gitlinks under .repos/.
+      - name: Drop checkout credentials
+        uses: ./.github/actions/drop-checkout-credentials
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
