@@ -1,0 +1,95 @@
+name: Publish npm launcher
+
+# Trevize: publishes @trevize-dev/code once a trevize-v release is live. Releases are
+# built on a maintainer's Mac (see the trevize-release skill); npm authenticates this
+# workflow through trusted publishing, so no token or 2FA prompt is involved.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, such as trevize-v0.2.7"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish @trevize-dev/code
+    if: ${{ github.repository == 'trevize-dev/trevize-code' && (github.event_name == 'workflow_dispatch' || !github.event.release.prerelease) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Resolve the version
+        id: version
+        run: |
+          if [[ ! "$TAG" =~ ^trevize-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::$TAG is not a trevize-vX.Y.Z release tag." >&2
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+      # The launcher downloads these on first run, so never publish before they exist.
+      - name: Check the release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          release="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets)"
+          if [[ "$(jq -r '.isDraft or .isPrerelease' <<<"$release")" != "false" ]]; then
+            echo "::error::$TAG is a draft or a prerelease." >&2
+            exit 1
+          fi
+          for name in SHA256SUMS "t3-$VERSION-darwin-arm64.tar.gz" "t3-$VERSION-linux-x64.tar.gz"; do
+            if ! jq -e --arg name "$name" '.assets[] | select(.name == $name and .state == "uploaded")' <<<"$release" >/dev/null; then
+              echo "::error::$TAG has no uploaded $name." >&2
+              exit 1
+            fi
+          done
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+
+      - name: Skip a version npm already has
+        id: published
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "@trevize-dev/code@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::@trevize-dev/code@$VERSION is already on npm."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the npm launcher
+        if: steps.published.outputs.exists != 'true'
+        run: node scripts/build-npm-launcher.ts --version "${{ steps.version.outputs.version }}" --output-dir npm-packages
+
+      # Publish the folder, not trevize-code.tgz: the registry rejects the tarball's
+      # directory entries with E415. Trusted publishing needs npm 11.5.1 or newer.
+      - name: Publish
+        if: steps.published.outputs.exists != 'true'
+        run: |
+          npm install -g npm@^11.5.1 >/dev/null
+          if ! npm publish --access public --provenance ./npm-packages/trevize-code; then
+            echo "::error::npm publish failed. Check that @trevize-dev/code has a trusted publisher for trevize-dev/trevize-code and .github/workflows/publish-npm.yml." >&2
+            exit 1
+          fi
