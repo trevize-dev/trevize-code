@@ -131,9 +131,19 @@ describe("environmentMismatchError", () => {
     const error = environmentMismatchError({
       expected: EnvironmentId.make("saved"),
       actual: EnvironmentId.make("reached"),
+      answeredByAddress: true,
     });
 
     expect(error.reason).toBe("configuration");
     expect(error.reachedEnvironmentId).toBe("reached");
+  });
+
+  it("names no reached environment for a saved route that disagrees with its target", () => {
+    const error = environmentMismatchError({
+      expected: EnvironmentId.make("saved"),
+      actual: EnvironmentId.make("profile"),
+    });
+
+    expect(error.reachedEnvironmentId).toBeUndefined();
   });
 });

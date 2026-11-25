@@ -100,8 +100,9 @@ export type TrevizeSyncAction =
   | { readonly _tag: "Pair"; readonly environment: TrevizeEnvironment }
   /**
    * Saved, running, and its address now answers as a different environment:
-   * Trevize replaced the sandbox, and its new server made up a new id. Pair
-   * the new server, then drop the saved entry it replaced.
+   * the sandbox was replaced by one whose server has another id (Trevize
+   * keeps the id across replacements since, so mostly older replacements).
+   * Pair the new server, then drop the saved entry it replaced.
    */
   | {
       readonly _tag: "Replace";
@@ -135,7 +136,7 @@ export interface TrevizeSyncInput {
   /** Saved environments whose credential the environment rejected. */
   readonly rejectedCredentials: ReadonlySet<EnvironmentId>;
   /** Saved environments whose address now answers as another environment. */
-  readonly replacedEnvironments?: ReadonlySet<EnvironmentId>;
+  readonly replacedEnvironments: ReadonlySet<EnvironmentId>;
 }
 
 export interface TrevizeSyncPlan {
@@ -170,7 +171,7 @@ export function planTrevizeSync(input: TrevizeSyncInput): TrevizeSyncPlan {
       input.autoConnect &&
       environment.status === "running" &&
       environmentId !== null &&
-      input.replacedEnvironments?.has(environmentId) === true
+      input.replacedEnvironments.has(environmentId)
     ) {
       actions.push({ _tag: "Replace", environmentId, environment });
     } else if (

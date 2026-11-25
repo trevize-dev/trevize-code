@@ -102,6 +102,7 @@ describe("planTrevizeSync", () => {
       managedOrigins: [],
       autoConnect: true,
       rejectedCredentials: new Set(),
+      replacedEnvironments: new Set(),
       ...input,
     });
 
@@ -635,6 +636,7 @@ describe("TrevizeCloudSync", () => {
           lastFailure: environmentMismatchError({
             expected: T3_A,
             actual: EnvironmentId.make("t3-new"),
+            answeredByAddress: true,
           }),
         },
       });
