@@ -61,6 +61,7 @@ import { ReviewCommentComposerSheet } from "./features/review/ReviewCommentCompo
 import { ReviewSheet } from "./features/review/ReviewSheet";
 import { ThreadTerminalRouteScreen } from "./features/terminal/ThreadTerminalRouteScreen";
 import { DevicePreviewRouteScreen } from "./features/devices/DevicePreviewRouteScreen";
+import { DesktopPreviewRouteScreen } from "./features/desktop/DesktopPreviewRouteScreen";
 import { BrowserPreviewRouteScreen } from "./features/browser/BrowserPreviewRouteScreen";
 import { LocalPreviewRouteScreen } from "./features/browser/LocalPreviewRouteScreen";
 import { GitBranchesSheet } from "./features/threads/git/GitBranchesSheet";
@@ -742,6 +743,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ThreadBrowserPreview: createNativeStackScreen({
       screen: BrowserPreviewRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/browser`,
+      options: immersiveRoute({ fullWidth: true }),
+    }),
+    ThreadDesktopPreview: createNativeStackScreen({
+      screen: DesktopPreviewRouteScreen,
+      linking: `${THREAD_LINKING_PREFIX}/desktop`,
       options: immersiveRoute({ fullWidth: true }),
     }),
     ThreadLocalPreview: createNativeStackScreen({

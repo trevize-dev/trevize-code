@@ -191,6 +191,7 @@ import {
   selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
+import { remoteDesktopEnvironment } from "../state/remoteDesktop";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -771,6 +772,10 @@ function OpenCommandPaletteDialog(props: {
   const canTriage =
     useAtomValue(serverEnvironment.prepareTriage.permissionAtom(triageEnvironmentId)) &&
     supportsTriage(triageEnvironmentId);
+  const canOpenActiveThreadDesktop =
+    useAtomValue(
+      remoteDesktopEnvironment.prepare.permissionAtom(activeThread?.environmentId ?? null),
+    ) && activeThreadServerConfig?.environment.capabilities.remoteDesktop === true;
   const currentProject = resolveCommandPaletteProject(
     projectByKey,
     currentProjectEnvironmentId,
@@ -1476,6 +1481,21 @@ function OpenCommandPaletteDialog(props: {
       shortcutCommand: "preview.find",
       run: async () => {
         dispatchPreviewAction("find");
+      },
+    });
+  }
+
+  if (activeThread !== null && canOpenActiveThreadDesktop) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    actionItems.push({
+      kind: "action",
+      value: "action:open-desktop",
+      searchTerms: ["desktop", "remote desktop", "screen", "gui", "x11"],
+      title: gt("Open desktop"),
+      icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "desktop.toggle",
+      run: async () => {
+        useRightPanelStore.getState().open(threadRef, "desktop");
       },
     });
   }

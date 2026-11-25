@@ -112,6 +112,7 @@ export class ServerConfig extends Context.Service<
     readonly logWebSocketEvents: boolean;
     readonly tailscaleServeEnabled: boolean;
     readonly tailscaleServePort: number;
+    readonly remoteDesktopCommand?: string | undefined;
   }
 >()("t3/config/ServerConfig") {
   static readonly layerTest = (

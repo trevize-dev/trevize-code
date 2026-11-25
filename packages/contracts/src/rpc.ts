@@ -347,6 +347,7 @@ import {
   PreviewAdjustInput,
   PreviewSessionSnapshot,
 } from "./preview.ts";
+import { RemoteDesktopError, RemoteDesktopPrepareResult } from "./remoteDesktop.ts";
 import {
   DeviceActionInput,
   DeviceCloseInput,
@@ -573,6 +574,8 @@ export const WS_METHODS = {
   previewReportProfiles: "preview.reportProfiles",
   previewReportStatus: "preview.reportStatus",
   previewStopLocalServer: "preview.stopLocalServer",
+
+  desktopPrepare: "desktop.prepare",
 
   deviceConfigure: "device.configure",
   deviceList: "device.list",
@@ -2050,6 +2053,12 @@ const WsSubscribeDiscoveredLocalServersRpc = Rpc.make(WS_METHODS.subscribeDiscov
   stream: true,
 });
 
+const WsDesktopPrepareRpc = Rpc.make(WS_METHODS.desktopPrepare, {
+  payload: Schema.Struct({}),
+  success: RemoteDesktopPrepareResult,
+  error: Schema.Union([RemoteDesktopError, EnvironmentAuthorizationError]),
+});
+
 const WsDeviceTestHostRpc = Rpc.make(WS_METHODS.deviceTestHost, {
   payload: SshDeviceHostConfig,
   success: DeviceHostSummary,
@@ -2697,6 +2706,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribePreviewEventsRpc,
   WsPreviewStopLocalServerRpc,
   WsSubscribeDiscoveredLocalServersRpc,
+  WsDesktopPrepareRpc,
   WsDeviceConfigureRpc,
   WsDeviceListRpc,
   WsDeviceTestHostRpc,

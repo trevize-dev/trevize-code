@@ -174,6 +174,17 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   lan: Config.Boolean("T3CODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  remoteDesktopCommand: Config.String("T3CODE_REMOTE_DESKTOP_COMMAND").pipe(
+    Config.option,
+    Config.map((value) =>
+      Option.getOrUndefined(
+        Option.filter(
+          Option.map(value, (text) => text.trim()),
+          (text) => text.length > 0,
+        ),
+      ),
+    ),
+  ),
 });
 
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
@@ -538,6 +549,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     logWebSocketEvents,
     tailscaleServeEnabled,
     tailscaleServePort,
+    ...(env.remoteDesktopCommand !== undefined
+      ? { remoteDesktopCommand: env.remoteDesktopCommand }
+      : {}),
   };
 
   return config;

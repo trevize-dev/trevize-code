@@ -315,6 +315,14 @@
       "types": "./src/state/previewTunnel.ts",
       "default": "./src/state/previewTunnel.ts"
     },
+    "./state/desktopUrl": {
+      "types": "./src/state/desktopUrl.ts",
+      "default": "./src/state/desktopUrl.ts"
+    },
+    "./state/remoteDesktop": {
+      "types": "./src/state/remoteDesktop.ts",
+      "default": "./src/state/remoteDesktop.ts"
+    },
     "./state/peerLinks": {
       "types": "./src/state/peerLinks.ts",
       "default": "./src/state/peerLinks.ts"
