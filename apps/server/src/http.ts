@@ -30,6 +30,7 @@ import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
 import { cast, pipe } from "effect/Function";
 import {
+  Headers,
   HttpClient,
   HttpClientResponse,
   HttpEffect,
@@ -317,6 +318,38 @@ function withVaryOrigin(
     existing ? `${existing}, Origin` : "Origin",
   );
 }
+
+/**
+ * Trevize: Daytona 2.0's preview proxy strips `Authorization`, so the Trevize
+ * gateway also sends it as `X-Trevize-Authorization`. With
+ * `T3CODE_FORWARDED_AUTHORIZATION`, a request without `Authorization` gets it back
+ * from that header before any auth code reads the request.
+ */
+export const FORWARDED_AUTHORIZATION_HEADER = "x-trevize-authorization";
+
+export const layerForwardedAuthorization = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    if (!config.forwardedAuthorization) return Layer.empty;
+    return HttpRouter.middleware(
+      (httpEffect) =>
+        Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
+          const forwarded = request.headers[FORWARDED_AUTHORIZATION_HEADER];
+          if (request.headers.authorization !== undefined || forwarded === undefined) {
+            return httpEffect;
+          }
+          return Effect.provideService(
+            httpEffect,
+            HttpServerRequest.HttpServerRequest,
+            request.modify({
+              headers: Headers.set(request.headers, "authorization", forwarded),
+            }),
+          );
+        }),
+      { global: true },
+    );
+  }),
+);
 
 export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {

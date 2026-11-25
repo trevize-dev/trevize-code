@@ -113,6 +113,7 @@ export class ServerConfig extends Context.Service<
     readonly tailscaleServeEnabled: boolean;
     readonly tailscaleServePort: number;
     readonly remoteDesktopCommand?: string | undefined;
+    readonly forwardedAuthorization?: boolean | undefined;
   }
 >()("t3/config/ServerConfig") {
   static readonly layerTest = (

@@ -978,6 +978,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ProviderMaintenanceRunner.layer),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
+  Layer.provide(ServerHttp.layerForwardedAuthorization),
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 

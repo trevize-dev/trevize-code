@@ -174,6 +174,10 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   lan: Config.Boolean("T3CODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  forwardedAuthorization: Config.Boolean("T3CODE_FORWARDED_AUTHORIZATION").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   remoteDesktopCommand: Config.String("T3CODE_REMOTE_DESKTOP_COMMAND").pipe(
     Config.option,
     Config.map((value) =>
@@ -552,6 +556,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ...(env.remoteDesktopCommand !== undefined
       ? { remoteDesktopCommand: env.remoteDesktopCommand }
       : {}),
+    ...(env.forwardedAuthorization === true ? { forwardedAuthorization: true } : {}),
   };
 
   return config;
