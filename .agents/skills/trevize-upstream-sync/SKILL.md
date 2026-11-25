@@ -230,3 +230,12 @@ if a pattern changed. Prune entries that no longer apply.
   an environment's loopback ports. The new `no-untranslated-copy` rule flagged ~280 strings in
   fork-only files, wrapped in the merge commit. Desktop `StartupWMClass` now follows Electron's
   WM class (`dev.trevize.Code`).
+- **v0.1.12 (2026-11-25).** 1,092 upstream commits, 34 conflicts. Upstream renamed the
+  `side-chat` right-panel surface to `thread` (plus `linked-thread`); `space` sits beside them.
+  Telemetry became `Config.option` + `DO_NOT_TRACK`; keep `enabledByDefault = false`. Both sides
+  had added `useEnvironmentScopeDenied` (keep upstream's). `remoteOpen` now takes `routes`, so
+  `gatewayOnly` derives from them. Web browser tests (CI only) caught fork code under upstream
+  mocks: tests mocking `@clerk/react` `useAuth` also need `cloud/trevizeAccount` mocked, tests
+  that stub `useAtomValue` need `useSpaces` mocked, and `reactCompilerCoverage` rejects
+  `try`/`finally` in fork components. Run `vp test run --project browser` on new upstream
+  browser tests that render fork code before pushing.

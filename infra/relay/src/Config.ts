@@ -67,6 +67,8 @@ export class RelayConfiguration extends Context.Service<
     readonly clerkJwtAudience: string;
     // Trevize: when set, clients authenticate with Trevize (Better Auth) account JWTs.
     readonly accountAuth?: AccountTokenSettings;
+    /** Verifies Clerk `user.deleted` webhooks; unset leaves the webhook route disabled. */
+    readonly clerkWebhookSigningSecret?: Redacted.Redacted<string>;
     readonly apnsDeliveryJobSigningSecret: Redacted.Redacted<string>;
     readonly cloudMintPrivateKey: Redacted.Redacted<string>;
     readonly cloudMintPublicKey: string;

@@ -72,6 +72,10 @@ vi.mock(import("@clerk/react"), async (original) => ({
   ...(await original()),
   useAuth: (() => state.auth) as never,
 }));
+vi.mock(import("../../cloud/trevizeAccount"), async (original) => ({
+  ...(await original()),
+  useAuth: (() => state.auth) as never,
+}));
 vi.mock(import("../clerk/clerkLoadFailure"), async (original) => ({
   ...(await original()),
   useClerkLoadFailed: () => false,
