@@ -50,6 +50,13 @@ export function isHostCredentialRefusal(error: ConnectionAttemptError): boolean 
 export function environmentMismatchError(input: {
   readonly expected: EnvironmentId;
   readonly actual: EnvironmentId;
+  /**
+   * The saved address itself answered as `actual` (its descriptor), rather
+   * than a saved profile or relay route disagreeing with its target. Recorded
+   * as `reachedEnvironmentId`, so Trevize sync can pair a replaced sandbox's
+   * new server.
+   */
+  readonly answeredByAddress?: boolean;
 }): ConnectionBlockedError {
   return new ConnectionBlockedError({
     reason: "configuration",
@@ -59,6 +66,7 @@ export function environmentMismatchError(input: {
         { actual: input.actual, expected: input.expected },
       ),
     ),
+    ...(input.answeredByAddress === true ? { reachedEnvironmentId: input.actual } : {}),
   });
 }
 

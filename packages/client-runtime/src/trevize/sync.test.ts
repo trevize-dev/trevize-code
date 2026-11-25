@@ -23,6 +23,7 @@ import {
   type NetworkStatus,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
+import { environmentMismatchError } from "../connection/errors.ts";
 import * as ConnectionOnboarding from "../connection/onboarding.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
@@ -101,6 +102,7 @@ describe("planTrevizeSync", () => {
       managedOrigins: [],
       autoConnect: true,
       rejectedCredentials: new Set(),
+      replacedEnvironments: new Set(),
       ...input,
     });
 
@@ -133,6 +135,35 @@ describe("planTrevizeSync", () => {
       { _tag: "Noop", environmentId: T3_A, environment: a },
       { _tag: "Pair", environment: b },
     ]);
+  });
+
+  it("pairs the new server of a running environment whose address answers as another one", () => {
+    const replaced = trevizeEnvironment("env_a", "running");
+    const stopped = trevizeEnvironment("env_b", "stopped");
+    const saved = [savedEntry(T3_A, origin("env_a")), savedEntry(T3_B, origin("env_b"))];
+
+    expect(
+      plan({
+        environments: [replaced, stopped],
+        saved,
+        replacedEnvironments: new Set([T3_A, T3_B]),
+      }).actions,
+    ).toEqual([
+      { _tag: "Replace", environmentId: T3_A, environment: replaced },
+      { _tag: "MarkSleeping", environmentId: T3_B, environment: stopped },
+    ]);
+  });
+
+  it("leaves a replaced environment alone when automatic connection is off", () => {
+    const replaced = trevizeEnvironment("env_a", "running");
+    expect(
+      plan({
+        environments: [replaced],
+        saved: [savedEntry(T3_A, origin("env_a"))],
+        autoConnect: false,
+        replacedEnvironments: new Set([T3_A]),
+      }).actions,
+    ).toEqual([{ _tag: "Noop", environmentId: T3_A, environment: replaced }]);
   });
 
   it("does not pair when automatic connection is off", () => {
@@ -590,6 +621,29 @@ describe("TrevizeCloudSync", () => {
 
       yield* awaitState((state) => state.lastSyncedAt !== null).pipe(Effect.provide(harness.layer));
       expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_a")]);
+    }),
+  );
+
+  it.effect("pairs a replaced sandbox's new server and drops the entry it replaced", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        saved: [savedEntry(T3_A, origin("env_a"))],
+        environments: [trevizeEnvironment("env_a", "running")],
+        managedOrigins: [],
+        connection: {
+          ...AVAILABLE_CONNECTION_STATE,
+          phase: "blocked",
+          lastFailure: environmentMismatchError({
+            expected: T3_A,
+            actual: EnvironmentId.make("t3-new"),
+            answeredByAddress: true,
+          }),
+        },
+      });
+
+      yield* awaitState((state) => state.lastSyncedAt !== null).pipe(Effect.provide(harness.layer));
+      expect(harness.pairings.map((pairing) => pairing.host)).toEqual([origin("env_a")]);
+      expect(harness.removed).toEqual([T3_A]);
     }),
   );
 
