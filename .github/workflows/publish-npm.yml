@@ -65,6 +65,12 @@ jobs:
         with:
           ref: ${{ env.TAG }}
           persist-credentials: false
+          # Like ci.yml: .repos/ holds a nested submodule with no URL, which fails checkout.
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
