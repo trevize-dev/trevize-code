@@ -177,6 +177,39 @@ describe("RemoteDesktopProxy", () => {
     }
   });
 
+  it("serves voxl's public assets without credentials, since the page requests them without its wsTicket", async () => {
+    const fixture = makeWebProxyFixture({
+      scopes: [],
+      authError: new EnvironmentAuth.ServerAuthMissingCredentialError({}),
+    });
+    try {
+      for (const asset of ["/client.js", "/inter.woff2", "/favicon.ico", "/worker.js"]) {
+        const response = await fixture.handler(new Request(`http://t3.test/api/desktop${asset}`));
+        expect(response.status).toBe(200);
+        await response.text();
+      }
+      expect(fixture.requests.map((request) => request.url)).toEqual([
+        "http://127.0.0.1:6901/client.js",
+        "http://127.0.0.1:6901/inter.woff2",
+        "http://127.0.0.1:6901/favicon.ico",
+        "http://127.0.0.1:6901/worker.js",
+      ]);
+
+      for (const path of ["/api/desktop/index.html", "/api/desktop/files/list"]) {
+        expect((await fixture.handler(new Request(`http://t3.test${path}`))).status).toBe(401);
+      }
+      const upgrade = await fixture.handler(
+        new Request("http://t3.test/api/desktop/ws", {
+          headers: { upgrade: "websocket", connection: "Upgrade" },
+        }),
+      );
+      expect(upgrade.status).toBe(401);
+      expect(fixture.requests).toHaveLength(4);
+    } finally {
+      await fixture.dispose();
+    }
+  });
+
   it.each([AuthOrchestrationReadScope, AuthTerminalReadScope])(
     "refuses sessions lacking terminal operate scope (%s)",
     async (scope) => {
