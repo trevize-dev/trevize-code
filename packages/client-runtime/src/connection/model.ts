@@ -133,6 +133,11 @@ export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlocked
     ...ConnectionFailureFields,
 
     serverUpdateRequired: Schema.optionalKey(Schema.Boolean),
+    /**
+     * The environment the address answers as, when it is not the one saved
+     * for it (`environmentMismatchError`): the host now runs another install.
+     */
+    reachedEnvironmentId: Schema.optionalKey(EnvironmentId),
   },
 ) {
   override get message(): string {

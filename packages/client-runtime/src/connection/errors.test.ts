@@ -3,10 +3,11 @@ import {
   RelayEnvironmentConnectNotAuthorizedError,
   RelayEnvironmentEndpointTimedOutError,
 } from "@t3tools/contracts/relay";
-import { EnvironmentAuthInvalidError } from "@t3tools/contracts";
+import { EnvironmentAuthInvalidError, EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  environmentMismatchError,
   isHostCredentialRefusal,
   mapManagedRelayError,
   mapRemoteDpopEnvironmentError,
@@ -122,5 +123,17 @@ describe("mapRemoteDpopEnvironmentError", () => {
     );
     expect(mapped).toMatchObject({ via: "direct", failureCause: "clock_skew" });
     expect(isHostCredentialRefusal(mapped)).toBe(false);
+  });
+});
+
+describe("environmentMismatchError", () => {
+  it("names the environment the address answers as", () => {
+    const error = environmentMismatchError({
+      expected: EnvironmentId.make("saved"),
+      actual: EnvironmentId.make("reached"),
+    });
+
+    expect(error.reason).toBe("configuration");
+    expect(error.reachedEnvironmentId).toBe("reached");
   });
 });

@@ -59,6 +59,7 @@ export function environmentMismatchError(input: {
         { actual: input.actual, expected: input.expected },
       ),
     ),
+    reachedEnvironmentId: input.actual,
   });
 }
 

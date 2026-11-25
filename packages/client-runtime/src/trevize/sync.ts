@@ -98,6 +98,16 @@ export class TrevizeSettingsStore extends Context.Service<
 export type TrevizeSyncAction =
   /** Not saved on this device (or its credential was rejected) and running: pair it. */
   | { readonly _tag: "Pair"; readonly environment: TrevizeEnvironment }
+  /**
+   * Saved, running, and its address now answers as a different environment:
+   * Trevize replaced the sandbox, and its new server made up a new id. Pair
+   * the new server, then drop the saved entry it replaced.
+   */
+  | {
+      readonly _tag: "Replace";
+      readonly environmentId: EnvironmentId;
+      readonly environment: TrevizeEnvironment;
+    }
   /** Saved, Trevize-managed, and archived or no longer visible to this account. */
   | {
       readonly _tag: "Remove";
@@ -124,6 +134,8 @@ export interface TrevizeSyncInput {
   readonly autoConnect: boolean;
   /** Saved environments whose credential the environment rejected. */
   readonly rejectedCredentials: ReadonlySet<EnvironmentId>;
+  /** Saved environments whose address now answers as another environment. */
+  readonly replacedEnvironments?: ReadonlySet<EnvironmentId>;
 }
 
 export interface TrevizeSyncPlan {
@@ -154,6 +166,13 @@ export function planTrevizeSync(input: TrevizeSyncInput): TrevizeSyncPlan {
     managed.add(origin);
     if (environmentId !== null && environment.status === "stopped") {
       actions.push({ _tag: "MarkSleeping", environmentId, environment });
+    } else if (
+      input.autoConnect &&
+      environment.status === "running" &&
+      environmentId !== null &&
+      input.replacedEnvironments?.has(environmentId) === true
+    ) {
+      actions.push({ _tag: "Replace", environmentId, environment });
     } else if (
       input.autoConnect &&
       environment.status === "running" &&
@@ -441,6 +460,15 @@ interface LoadedConfig {
   readonly settings: TrevizeClientSettings;
 }
 
+/** Blocked because the saved address now answers as a different environment. */
+function isEnvironmentReplaced(state: SupervisorConnectionState) {
+  return (
+    state.phase === "blocked" &&
+    state.lastFailure?._tag === "ConnectionBlockedError" &&
+    state.lastFailure.reachedEnvironmentId !== undefined
+  );
+}
+
 function isCredentialRejected(state: SupervisorConnectionState) {
   return (
     state.phase === "blocked" &&
@@ -567,6 +595,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
 
     const saved = [...(yield* SubscriptionRef.get(registry.entries)).values()];
     const rejectedCredentials = new Set<EnvironmentId>();
+    const replacedEnvironments = new Set<EnvironmentId>();
     for (const entry of saved) {
       const environmentId = entry.target.environmentId;
       const connection = yield* registry
@@ -574,6 +603,9 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
         .pipe(Effect.orElseSucceed(() => null));
       if (connection !== null && isCredentialRejected(connection)) {
         rejectedCredentials.add(environmentId);
+      }
+      if (connection !== null && isEnvironmentReplaced(connection)) {
+        replacedEnvironments.add(environmentId);
       }
     }
     const progress = new Map<EnvironmentId, TrevizeStartProgress>();
@@ -588,6 +620,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
       managedOrigins: settings.managedOrigins,
       autoConnect: settings.autoConnect,
       rejectedCredentials,
+      replacedEnvironments,
     });
 
     const sleeping = new Map<EnvironmentId, TrevizeEnvironment>();
@@ -610,6 +643,37 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
             ),
           );
           break;
+        case "Replace": {
+          const paired = yield* connectTrevizeEnvironment({
+            config,
+            environment: action.environment,
+            maxWaitMs: PAIR_MAX_WAIT_MS,
+          }).pipe(
+            Effect.provideContext(context),
+            Effect.catch((error) =>
+              Effect.as(
+                Effect.logWarning("Could not connect a replaced Trevize environment.", {
+                  environmentId: action.environment.id,
+                  error,
+                }),
+                null,
+              ),
+            ),
+          );
+          // Only once the new server is saved, so a failed pairing keeps the
+          // old entry (and its threads) for the next sync to try again.
+          if (paired !== null && paired !== action.environmentId) {
+            yield* registry.remove(action.environmentId).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Could not remove a replaced Trevize environment.", {
+                  environmentId: action.environmentId,
+                  error,
+                }),
+              ),
+            );
+          }
+          break;
+        }
         case "Remove":
           yield* registry.remove(action.environmentId).pipe(
             Effect.catch((error) =>
