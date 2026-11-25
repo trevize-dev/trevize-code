@@ -271,6 +271,7 @@ import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/
 import { useEnvironmentQueryRefresh } from "../state/query";
 import { revisionedQuery } from "../state/revisionedQuery";
 import { useEnvironmentScope } from "~/state/session";
+import { remoteDesktopEnvironment } from "~/state/remoteDesktop";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { threadEnvironment } from "../state/threads";
@@ -288,6 +289,7 @@ import {
 } from "../state/environments";
 import {
   resolveThreadDetailRef,
+  useEnvironmentSupportsRemoteDesktop,
   useEnvironmentSupportsServerBrowser,
   useProject,
   useQuietThreadProjection,
@@ -1127,6 +1129,13 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef?.environmentId ?? null,
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
+  const activeEnvironmentRemoteDesktop = useEnvironmentSupportsRemoteDesktop(
+    activeThreadRef?.environmentId ?? null,
+  );
+  const canOperateDesktop = useAtomValue(
+    remoteDesktopEnvironment.prepare.permissionAtom(activeThreadRef?.environmentId ?? null),
+  );
+  const desktopAvailable = activeEnvironmentRemoteDesktop && canOperateDesktop;
   const activeThreadShell = serverThread;
   const limitRecoveryRun =
     serverRuntime?.status === "failed" && serverRuntime.lastErrorClass === "usage_limit"
@@ -2585,6 +2594,7 @@ export default function ChatView(props: ChatViewProps) {
     : null;
   const {
     activateRightPanelSurfaceStable,
+    addDesktopSurfaceStable,
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
     addFilesSurfaceStable,
@@ -2617,6 +2627,7 @@ export default function ChatView(props: ChatViewProps) {
     diffAvailable,
     browserAvailable,
     canOperatePreview,
+    desktopAvailable,
     diffOpen,
     previewPanelOpen,
     rightPanelOpen,
@@ -3547,6 +3558,7 @@ export default function ChatView(props: ChatViewProps) {
             : undefined,
       }}
       issuesSupported={serverConfig?.environment.capabilities.issues === true}
+      remoteDesktopSupported={activeEnvironmentRemoteDesktop}
       files={{
         projectId: activeProject?.id,
         projectName: activeProject?.title ?? null,
@@ -4351,6 +4363,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddBrowser={() => createBrowserSurface()}
           onAddBrowserInProfile={createBrowserSurfaceStable}
           onDuplicateBrowser={duplicateBrowserSurfaceStable}
+          onAddDesktop={desktopAvailable ? addDesktopSurfaceStable : undefined}
           onAddTerminal={addTerminalSurfaceStable}
           onAddDiff={addDiffSurfaceStable}
           onAddFiles={addFilesSurfaceStable}

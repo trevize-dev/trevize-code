@@ -1410,4 +1410,39 @@ describe("rightPanelStore", () => {
     expect(surfaceIds()).toEqual(["browser:tab-a", "terminal:term-1", "diff", "browser:tab-b"]);
     expect(store.getUserActionRevision(refA)).toBe(revision);
   });
+
+  it("opens, toggles, and migrates desktop surfaces as a singleton per thread", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "desktop");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "desktop",
+      kind: "desktop",
+    });
+
+    store.open(refA, "desktop");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toEqual([{ id: "desktop", kind: "desktop" }]);
+
+    store.toggle(refA, "desktop");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+
+    store.toggle(refA, "desktop");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("desktop");
+
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "desktop",
+          surfaces: [{ id: "desktop:legacy", kind: "desktop" }],
+        },
+      },
+    });
+    expect(migrated.byThreadKey["env-1:thread-A"]).toEqual({
+      isOpen: true,
+      activeSurfaceId: "desktop",
+      surfaces: [{ id: "desktop", kind: "desktop" }],
+    });
+  });
 });

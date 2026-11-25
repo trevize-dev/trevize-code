@@ -16,7 +16,7 @@ import {
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { FolderLockIcon, SquareTerminalIcon } from "lucide-react";
+import { FolderLockIcon, MonitorIcon, SquareTerminalIcon } from "lucide-react";
 
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
@@ -47,6 +47,11 @@ const DiffPanel = lazy(() => import("../DiffPanel"));
 const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({
     default: module.DevicePanel,
+  })),
+);
+const DesktopPanel = lazy(() =>
+  import("../desktop/DesktopPanel").then((module) => ({
+    default: module.DesktopPanel,
   })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
@@ -97,6 +102,7 @@ export function RightPanelSurfaceContent(props: {
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
   readonly issuesSupported: boolean;
+  readonly remoteDesktopSupported?: boolean;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
 }) {
@@ -304,6 +310,34 @@ export function RightPanelSurfaceContent(props: {
           surface={surface}
           visible={visible && props.activeSurfaceId === surface.id}
         />
+      );
+    case "desktop":
+      if (terminalOperateDenied) {
+        return (
+          <SurfaceUnavailable
+            icon={<MonitorIcon />}
+            title={gt("Desktop isn't available")}
+            description={gt("This connection can't open the remote desktop in this environment.")}
+          />
+        );
+      }
+      if (props.remoteDesktopSupported === false) {
+        return (
+          <SurfaceUnavailable
+            icon={<MonitorIcon />}
+            title={gt("Desktop isn't available")}
+            description={gt("Remote desktop isn't configured on this environment.")}
+          />
+        );
+      }
+      return (
+        <Suspense fallback={null}>
+          <DesktopPanel
+            key={props.environmentId}
+            environmentId={props.environmentId}
+            visible={visible}
+          />
+        </Suspense>
       );
     case "device":
       return (

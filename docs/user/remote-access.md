@@ -429,6 +429,28 @@ the AppArmor profile: run it again if the browser reports a blocked sandbox on a
 host restored from an image or snapshot, where the profile can be on disk
 without being loaded. Without `sudo`, it only reports what it would change.
 
+## Desktop on a remote environment
+
+When an environment runs a desktop stream, you can watch and control it next to
+your thread on web, desktop, and mobile. The stream goes through the
+environment server, so it works over the local network, Tailscale, T3 Connect,
+and hosted gateways. Decoding live video requires HTTPS or `localhost`.
+
+Open **Desktop** from the right-panel launcher, the command palette (**Open
+desktop**), the `desktop.toggle` shortcut (`mod+alt+shift+d`), or the desktop
+button in a thread on mobile. Opening it starts the desktop on demand if it is
+not running yet.
+
+The viewer starts in view-only mode so stray clicks and keystrokes do not reach
+the desktop. Choose **Take control** to send pointer and keyboard input, and
+**Stop controlling** to return to view-only mode. Closing the panel disconnects
+your viewer while leaving the desktop running on the environment.
+
+To enable the Desktop panel on a server, set `T3CODE_REMOTE_DESKTOP_COMMAND` in
+the server's environment to a command that starts or checks the desktop and
+prints one JSON line `{"port":6901,"password":"…"}` to stdout, then restart the
+server. Only sessions with terminal operate permission can open the desktop.
+
 The browser runs in Chrome's sandbox by default. Chrome cannot start that sandbox
 as root. If your T3 server runs as root, run it as a nonroot user to keep
 sandboxing enabled. `t3 browser setup` does not fix this root restriction.

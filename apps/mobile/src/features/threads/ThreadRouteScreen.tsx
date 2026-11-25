@@ -89,6 +89,8 @@ import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./T
 import { draftRouteIdentity } from "./thread-route-state";
 import { NewTaskDraftRouteScreen, type NewTaskDraftRouteParams } from "./NewTaskDraftRouteScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
+import { useAtomValue } from "@effect/atom-react";
+import { remoteDesktopEnvironment } from "../../state/remoteDesktop";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
@@ -728,6 +730,17 @@ function ThreadRouteContent(
     }
   };
 
+  const canOperateDesktop = useAtomValue(
+    remoteDesktopEnvironment.prepare.permissionAtom(selectedThread?.environmentId ?? null),
+  );
+  const handleOpenDesktop = () => {
+    if (!selectedThread || !canOperateDesktop) return;
+    void navigation.navigate("ThreadDesktopPreview", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+    });
+  };
+
   const handleOpenTerminal = (nextTerminalId?: string | null) => {
     if (
       !selectedThread ||
@@ -1047,6 +1060,11 @@ function ThreadRouteContent(
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}
                 onOpenFilesInspector={handleOpenFilesInspector}
+                onOpenDesktop={
+                  serverConfig?.environment.capabilities.remoteDesktop === true && canOperateDesktop
+                    ? handleOpenDesktop
+                    : undefined
+                }
                 onReturnToThread={props.onReturnToThread}
               />
             )

@@ -55,6 +55,7 @@ interface RightPanelActionsInput {
   readonly diffAvailable: boolean;
   readonly browserAvailable: boolean;
   readonly canOperatePreview: boolean;
+  readonly desktopAvailable: boolean;
   readonly diffOpen: boolean;
   readonly previewPanelOpen: boolean;
   readonly rightPanelOpen: boolean;
@@ -88,6 +89,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     diffAvailable,
     browserAvailable,
     canOperatePreview,
+    desktopAvailable,
     diffOpen,
     previewPanelOpen,
     rightPanelOpen,
@@ -171,6 +173,11 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     useRightPanelStore.getState().open(activeThreadRef, "device");
   };
   const addDeviceSurfaceStable = useStableCallback(addDeviceSurface);
+  const addDesktopSurface = () => {
+    if (!activeThreadRef || !desktopAvailable) return;
+    useRightPanelStore.getState().open(activeThreadRef, "desktop");
+  };
+  const addDesktopSurfaceStable = useStableCallback(addDesktopSurface);
   const openFileSurface = (relativePath: string) => {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
@@ -340,6 +347,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   return {
     shortcuts,
     activateRightPanelSurfaceStable,
+    addDesktopSurfaceStable,
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
     addFilesSurfaceStable,

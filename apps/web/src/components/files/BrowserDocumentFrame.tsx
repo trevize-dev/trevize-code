@@ -68,6 +68,7 @@ const HTML_RENDER_SHORTCUT_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
   "threadPanel.toggle",
   "terminal.toggle",
   "preview.toggle",
+  "desktop.toggle",
   "navigation.back",
   "navigation.forward",
   "thread.previous",

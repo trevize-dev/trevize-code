@@ -52,6 +52,7 @@ import {
   Globe2,
   LayoutGridIcon,
   MessagesSquare,
+  Monitor,
   Plus,
   TerminalSquare,
   Volume2Icon,
@@ -153,6 +154,8 @@ export interface RightPanelTabsProps {
   onAddBrowser: () => void;
   /** Keep separate from the DOM click handler so a MouseEvent cannot become a profile id. */
   onAddBrowserInProfile: (profileId: string) => void;
+  /** Absent when the environment has no remote desktop or the session lacks operate scope. */
+  onAddDesktop?: (() => void) | undefined;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -339,6 +342,7 @@ function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+  onAddDesktop?: (() => void) | undefined;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -370,6 +374,18 @@ function RightPanelEmptyState(props: {
       disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.browser),
       onClick: props.onAddBrowser,
     },
+    ...(props.onAddDesktop
+      ? [
+          {
+            label: msg("Desktop"),
+            icon: Monitor,
+            shortcut: "R",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddDesktop,
+          },
+        ]
+      : []),
     {
       label: msg("Terminal"),
       icon: TerminalSquare,
@@ -634,6 +650,8 @@ function surfaceTitle(
         surface,
         resolve(msg("Thread on {label}", { label: surface.label })),
       );
+    case "desktop":
+      return resolve(msg("Desktop"));
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return resolve(msg("Browser"));
@@ -730,6 +748,8 @@ function SurfaceIcon({
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "linked-thread":
       return <MessagesSquare className="size-3 shrink-0" />;
+    case "desktop":
+      return <Monitor className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -1217,6 +1237,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: messages(SURFACE_DISABLED_REASONS.browser),
       onClick: props.onAddBrowser,
     },
+    ...(props.onAddDesktop
+      ? [
+          {
+            label: msg("Desktop"),
+            icon: Monitor,
+            shortcut: "R",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddDesktop,
+          },
+        ]
+      : []),
     {
       label: msg("Terminal"),
       icon: TerminalSquare,
@@ -1696,6 +1728,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddBrowser={props.onAddBrowser}
             onAddBrowserInProfile={props.onAddBrowserInProfile}
             browserProfiles={browserProfiles}
+            onAddDesktop={props.onAddDesktop}
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}

@@ -25,6 +25,7 @@ const RIGHT_PANEL_KINDS = [
   "files",
   "file",
   "preview",
+  "desktop",
   "device",
   "terminal",
   "pull-request",
@@ -48,6 +49,7 @@ export interface DeviceTabTarget {
 export type RightPanelSurface =
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
+  | { id: "desktop"; kind: "desktop" }
   | { id: "device" | `device:${string}`; kind: "device"; target?: DeviceTabTarget; title?: string }
   | {
       id: `terminal:${string}`;
@@ -134,7 +136,7 @@ export function decodeThreadSurface(surface: object): ThreadSurface | null {
 }
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 16;
+const RIGHT_PANEL_STORAGE_VERSION = 17;
 
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
   EnvironmentId.make("pull-requests-panel"),
@@ -310,6 +312,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "pull-requests":
       return { id: "pull-requests", kind };
+    case "desktop":
+      return { id: "desktop", kind };
     case "device":
       return { id: "device", kind };
   }
@@ -675,6 +679,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     }
                     if (surface.kind === "space") {
                       return typeof surface.spaceId === "string" ? [surface] : [];
+                    }
+                    if (surface.kind === "desktop") {
+                      return [{ id: "desktop", kind: "desktop" }];
                     }
                     if (surface.kind === "issue") {
                       if (
