@@ -33,6 +33,18 @@ const ALLOWED_HTTP_PATHS: ReadonlySet<string> = new Set([
   "/healthz",
 ]);
 
+// voxl's own login leaves these open: the page requests them without the query string that
+// carries the wsTicket (`<script src="client.js">`, its font and favicon), so they cannot need one.
+const PUBLIC_HTTP_PATHS: ReadonlySet<string> = new Set([
+  "/client.js",
+  "/worker.js",
+  "/audio.js",
+  "/mic.js",
+  "/favicon.ico",
+  "/inter.woff2",
+  "/healthz",
+]);
+
 const ALLOWED_WS_PATHS: ReadonlySet<string> = new Set(["/ws"]);
 
 const DROPPED_REQUEST_HEADERS = new Set([
@@ -141,9 +153,10 @@ const handler = Effect.gen(function* () {
   if (Option.isNone(url)) {
     return HttpServerResponse.text("Bad Request", { status: 400 });
   }
-  const session = yield* authenticateMediaRequest(AuthTerminalOperateScope);
   const desktopPath = url.value.pathname.slice(REMOTE_DESKTOP_ROUTE_PREFIX.length) || "/";
   const upgrade = isWebSocketUpgrade(request);
+  const publicAsset = !upgrade && PUBLIC_HTTP_PATHS.has(desktopPath);
+  const session = publicAsset ? null : yield* authenticateMediaRequest(AuthTerminalOperateScope);
   const allowed = upgrade ? ALLOWED_WS_PATHS.has(desktopPath) : ALLOWED_HTTP_PATHS.has(desktopPath);
   if (!allowed) {
     return HttpServerResponse.text("Not Found", { status: 404 });
@@ -152,12 +165,15 @@ const handler = Effect.gen(function* () {
     return HttpServerResponse.text("Method Not Allowed", { status: 405 });
   }
   const sessions = yield* SessionStore.SessionStore;
-  const invalidated = sessions.awaitInvalidation(session.sessionId).pipe(
-    Effect.catchTags({
-      SessionCredentialVerificationError: (error) =>
-        failEnvironmentInternal("internal_error", error).pipe(Effect.ignore),
-    }),
-  );
+  const invalidated =
+    session === null
+      ? Effect.never
+      : sessions.awaitInvalidation(session.sessionId).pipe(
+          Effect.catchTags({
+            SessionCredentialVerificationError: (error) =>
+              failEnvironmentInternal("internal_error", error).pipe(Effect.ignore),
+          }),
+        );
   const remoteDesktop = yield* RemoteDesktopService.RemoteDesktopService;
   const endpoint = yield* remoteDesktop.currentEndpoint;
   if (Option.isNone(endpoint)) {
