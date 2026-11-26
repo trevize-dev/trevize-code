@@ -4276,6 +4276,56 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
   );
 
+  it.effect("reads a pull request whose token cannot see one check context", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(
+          output(
+            encodeJson({
+              ...coreResponse({
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [checkRun({ name: "build", conclusion: "SUCCESS" }), null],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              }),
+              errors: [
+                {
+                  type: "FORBIDDEN",
+                  message: "Resource not accessible by integration",
+                  path: [
+                    "repository",
+                    "pullRequest",
+                    "commits",
+                    "nodes",
+                    0,
+                    "commit",
+                    "statusCheckRollup",
+                    "contexts",
+                    "nodes",
+                    1,
+                  ],
+                },
+              ],
+            }),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const detail = yield* cli.getPullRequestDetail(pullRequestInput);
+      expect(detail.checks.map((check) => check.name)).toEqual(["build"]);
+    }),
+  );
+
   it.effect("fails a missing pull ref beside another error, in GitHub's words", () =>
     Effect.gen(function* () {
       const refusedChecks = {
