@@ -61,6 +61,7 @@ import {
 } from "./pullRequestMutations.graphql.ts";
 import {
   PullRequestActionState,
+  PullRequestCheckContexts,
   PullRequestCore,
   PullRequestReadsGraphQLGroup,
 } from "./pullRequestReads.graphql.ts";
@@ -344,15 +345,37 @@ const isGitHubServerError = (error: unknown): boolean =>
 const isMissingPullRef = ({ path, type }: GraphQLClientError.GraphQLError): boolean =>
   type === "NOT_FOUND" && path?.join(".") === "repository.pullRequest.baseRef.compare";
 
+/**
+ * A GitHub App installation token without the permission for one check context (a commit status
+ * or another app's check run) gets that node refused. The rest of the rollup stands without it.
+ */
+const isWithheldCheckContext = ({ path, type }: GraphQLClientError.GraphQLError): boolean =>
+  type === "FORBIDDEN" &&
+  path !== undefined &&
+  path.length >= 10 &&
+  path[0] === "repository" &&
+  path[1] === "pullRequest" &&
+  path[2] === "commits" &&
+  path[3] === "nodes" &&
+  typeof path[4] === "number" &&
+  path[5] === "commit" &&
+  path[6] === "statusCheckRollup" &&
+  path[7] === "contexts" &&
+  path[8] === "nodes" &&
+  typeof path[9] === "number";
+
+const isTolerated = (graphQlError: GraphQLClientError.GraphQLError): boolean =>
+  isMissingPullRef(graphQlError) || isWithheldCheckContext(graphQlError);
+
 const isRefusedRequestedReviewersOnly = (error: unknown): boolean =>
   isGraphQlClientError(error) &&
   error.reason._tag === "ResponseError" &&
   error.reason.status === 200 &&
-  // A missing pull ref can come along; the retried read tolerates it.
+  // Tolerated errors can come along; the retried read tolerates them.
   error.reason.errors.every((graphQlError) => {
     const { path, type } = graphQlError;
     return (
-      isMissingPullRef(graphQlError) ||
+      isTolerated(graphQlError) ||
       (type === "FORBIDDEN" &&
         path?.length === 6 &&
         path[0] === "repository" &&
@@ -366,29 +389,31 @@ const isRefusedRequestedReviewersOnly = (error: unknown): boolean =>
     );
   });
 
-const isMissingPullRefOnly = <E>(
+const isToleratedOnly = <E>(
   error: E,
 ): error is E &
   GraphQLClientError.GraphQLClientError & { readonly reason: GraphQLClientError.ResponseError } =>
   isGraphQlClientError(error) &&
   error.reason._tag === "ResponseError" &&
   error.reason.status === 200 &&
-  error.reason.errors.every(isMissingPullRef);
+  error.reason.errors.every(isTolerated);
 
 /**
  * GitHub can lack `refs/pull/<number>/head` for a pull request it otherwise answers, and then
  * fails only the comparison against it. The rest of that answer stands, its comparison unknown.
+ * Withheld check contexts are read the same way.
  */
-const toleratingMissingPullRef =
+const toleratingPartialAnswer =
   <A, R2>(decode: (data: unknown) => Effect.Effect<A, Schema.SchemaError, R2>) =>
   <E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
-      Effect.catchIf(isMissingPullRefOnly, (error) =>
+      Effect.catchIf(isToleratedOnly, (error) =>
         decode(error.reason.data).pipe(Effect.mapError(() => error)),
       ),
     );
 const decodePullRequestCore = Schema.decodeUnknownEffect(PullRequestCore.result);
 const decodePullRequestActionState = Schema.decodeUnknownEffect(PullRequestActionState.result);
+const decodePullRequestCheckContexts = Schema.decodeUnknownEffect(PullRequestCheckContexts.result);
 
 /** A large pull request can produce a multi-megabyte patch; past this it is truncated. */
 const DIFF_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -1592,7 +1617,7 @@ export const make = Effect.gen(function* () {
           required: asksRequired(input.host),
           after,
         })
-        .pipe(graphql(target));
+        .pipe(toleratingPartialAnswer(decodePullRequestCheckContexts), graphql(target));
       const next = toPullRequestCheckContextsPage(result);
       if (next === null || next.headSha !== first.headSha) {
         return yield* readError(
@@ -1647,7 +1672,7 @@ export const make = Effect.gen(function* () {
           requestedReviewers,
           mergeQueue: input.host.toLowerCase() === "github.com",
         })
-        .pipe(toleratingMissingPullRef(decodePullRequestCore));
+        .pipe(toleratingPartialAnswer(decodePullRequestCore));
     return SourceControlRateLimit.Interactive.pipe(
       Effect.flatMap((allowReserve) =>
         readRequestedReviewers(input, 100, read).pipe(
@@ -2935,7 +2960,7 @@ export const make = Effect.gen(function* () {
             headRef: `refs/pull/${input.number}/head`,
           })
           .pipe(
-            toleratingMissingPullRef(decodePullRequestActionState),
+            toleratingPartialAnswer(decodePullRequestActionState),
             graphql({ ...target, allowReserve: true }),
             Effect.map((result) => result.repository?.pullRequest ?? null),
             Effect.flatMap(found(target)),
