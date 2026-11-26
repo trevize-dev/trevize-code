@@ -3372,6 +3372,7 @@
   "d3d88b57e60bcc26": "ステップ {current}/{total}：{step}",
   "5c3e33c17a1c7cf2": "再開",
   "7626b65e387503a3": "以前のサンドボックスがプロバイダー側で故障しました。Trevize はプッシュ済みのブランチから新しいサンドボックスを起動しています。未プッシュの変更とこれまでの会話は新しいサンドボックスにはありません。プロバイダーが復旧できる場合に備え、以前のサンドボックスは 7 日間保持されます。",
+  "bd90fd96c98e9c6f": "再起動",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",

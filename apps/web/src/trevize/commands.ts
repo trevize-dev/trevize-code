@@ -64,6 +64,17 @@ export const wakeEnvironment = createRuntimeCommand(connectionAtomRuntime, {
     TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.wake(environmentId))),
 });
 
+/** Gives up on a stuck start, starts the environment again and reconnects it. */
+export const restartEnvironment = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:trevize:restart-environment",
+  concurrency: {
+    mode: "singleFlight",
+    key: (environmentId: EnvironmentId) => environmentId,
+  },
+  execute: (environmentId: EnvironmentId) =>
+    TrevizeSync.TrevizeCloudSync.pipe(Effect.flatMap((sync) => sync.restart(environmentId))),
+});
+
 /** The short-lived T3 Connect relay token for the signed-in Trevize account, if any. */
 export const relayToken = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:trevize:relay-token",
