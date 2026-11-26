@@ -3374,6 +3374,7 @@
   "d3d88b57e60bcc26": "Step {current} of {total}: {step}",
   "5c3e33c17a1c7cf2": "Wake",
   "7626b65e387503a3": "The old sandbox failed on the provider. Trevize is starting a new one from your pushed branches. Unpushed changes and earlier conversations are not in the new one; the old sandbox is kept for 7 days in case the provider can recover it.",
+  "bd90fd96c98e9c6f": "Restart",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",

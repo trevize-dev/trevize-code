@@ -3378,6 +3378,7 @@
   "d3d88b57e60bcc26": "第 {current} 步，共 {total} 步：{step}",
   "5c3e33c17a1c7cf2": "唤醒",
   "7626b65e387503a3": "旧沙箱在服务商端出现故障。Trevize 正在根据你已推送的分支启动新沙箱。未推送的更改和之前的对话不在新沙箱中；旧沙箱会保留 7 天，以便服务商尝试恢复。",
+  "bd90fd96c98e9c6f": "重新启动",
   "6bb0906e2aff68b0": "Could not wake environment",
   "ede007a197d3884c": "Trevize did not wake it.",
   "30ec57324863926a": "Some queued messages were not sent",

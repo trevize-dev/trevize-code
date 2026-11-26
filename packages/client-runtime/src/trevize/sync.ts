@@ -32,6 +32,7 @@ import {
   getEnvironment,
   sendThreadMessage,
   updateSpace as updateTrevizeSpace,
+  restartEnvironment,
   wakeWhenReady,
   listEnvironments,
   listRepositories,
@@ -365,6 +366,11 @@ export class TrevizeCloudSync extends Context.Service<
      * works, so no pairing token is minted.
      */
     readonly wake: (environmentId: EnvironmentId) => Effect.Effect<void, TrevizeApiError>;
+    /**
+     * Restarts a start that is stuck (Trevize `restart`), then waits for it
+     * like {@link wake}. A wake already polling picks the new start up.
+     */
+    readonly restart: (environmentId: EnvironmentId) => Effect.Effect<void, TrevizeApiError>;
     /**
      * Makes a Trevize thread openable on this device and returns its route:
      * wakes its environment when it sleeps, or connects it when this device
@@ -820,6 +826,39 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     }).pipe(Effect.ensuring(setWaking(environmentId, false)));
   });
 
+  const restart = Effect.fn("TrevizeCloudSync.restart")(function* (environmentId: EnvironmentId) {
+    const loaded = yield* loadConfig;
+    if (Option.isNone(loaded)) {
+      return yield* new TrevizeApiError({
+        reason: "unauthorized",
+        message: "Sign in to Trevize Cloud to restart this environment.",
+      });
+    }
+    const current = yield* SubscriptionRef.get(state);
+    const saved = [...(yield* SubscriptionRef.get(registry.entries)).values()];
+    const environment =
+      current.sleeping.get(environmentId) ??
+      current.environments.find(
+        (candidate) => findSavedTrevizeEnvironment(saved, candidate.httpBaseUrl) === environmentId,
+      );
+    if (environment === undefined) {
+      return yield* new TrevizeApiError({
+        reason: "request",
+        message: "Trevize does not list this environment.",
+      });
+    }
+    yield* setProgress(environmentId, {
+      status: "starting",
+      phase: null,
+      recovering: false,
+      error: null,
+    });
+    yield* restartEnvironment(loaded.value.config, environment.id).pipe(
+      Effect.provideContext(context),
+    );
+    yield* wake(environmentId);
+  });
+
   /** Waits for a Trevize environment and pairs this device with it. */
   const connect = (
     config: TrevizeApiConfig,
@@ -1188,6 +1227,7 @@ export const make = Effect.fn("TrevizeCloudSync.make")(function* () {
     state,
     syncNow,
     wake,
+    restart,
     openTask,
     createSpace,
     updateSpace,

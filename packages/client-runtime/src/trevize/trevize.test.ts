@@ -450,6 +450,38 @@ describe("wakeWhenReady", () => {
   );
 });
 
+describe("restartEnvironment", () => {
+  const restartUrl = "POST https://trevize.example.test/api/v1/environments/env_1/restart";
+
+  it.effect("asks Trevize to restart the start", () =>
+    Effect.gen(function* () {
+      const calls: Array<Call> = [];
+      const restarted = yield* TrevizeApi.restartEnvironment(config, "env_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp(calls, [
+            () => Response.json({ status: "starting", retryAfterSeconds: 5 }),
+          ]),
+        ),
+      );
+
+      expect(restarted).toBe(true);
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([restartUrl]);
+    }),
+  );
+
+  it.effect("answers false on a Trevize without restart", () =>
+    Effect.gen(function* () {
+      const restarted = yield* TrevizeApi.restartEnvironment(config, "env_1").pipe(
+        Effect.provide(
+          layerTrevizeHttp([], [() => Response.json({ message: "Not found" }, { status: 404 })]),
+        ),
+      );
+
+      expect(restarted).toBe(false);
+    }),
+  );
+});
+
 describe("connectTrevizeEnvironment", () => {
   it.effect("redeems the pairing token through the pairing flow with the Trevize title", () =>
     Effect.gen(function* () {

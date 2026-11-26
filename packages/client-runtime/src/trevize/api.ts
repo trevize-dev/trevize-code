@@ -449,6 +449,30 @@ export const stopEnvironment = Effect.fn("clientRuntime.trevize.stopEnvironment"
   );
 });
 
+/**
+ * Gives up on an in-flight start and starts the environment again (Trevize
+ * fails and cancels the stuck attempt). `false` from a Trevize without
+ * `restart` (HTTP 404); poll with {@link wakeWhenReady} either way.
+ */
+export const restartEnvironment = Effect.fn("clientRuntime.trevize.restartEnvironment")(function* (
+  config: TrevizeApiConfig,
+  environmentId: string,
+) {
+  return yield* execute(
+    config,
+    HttpClientRequest.post(
+      apiUrl(config, `/environments/${encodeURIComponent(environmentId)}/restart`),
+    ),
+    TrevizeWakeResult,
+  ).pipe(
+    Effect.as(true),
+    Effect.catchIf(
+      (error) => error.status === 404,
+      () => Effect.succeed(false),
+    ),
+  );
+});
+
 /** Stops the environment's sandbox for good and hides it from listings. */
 export const archiveEnvironment = Effect.fn("clientRuntime.trevize.archiveEnvironment")(function* (
   config: TrevizeApiConfig,

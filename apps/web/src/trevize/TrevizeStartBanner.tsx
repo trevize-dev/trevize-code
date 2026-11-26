@@ -59,10 +59,13 @@ export function useTrevizeStartBannerItem(input: {
 }): ComposerBannerStackItem | null {
   const gt = useGT();
   const wake = useAtomCommand(Trevize.wakeEnvironment, { reportFailure: false });
+  const restart = useAtomCommand(Trevize.restartEnvironment, { reportFailure: false });
   const { environmentId, notice } = input;
   if (environmentId === null || notice === null) return null;
   const id = `trevize-environment:${environmentId}`;
   const wakeNow = () => void wake(environmentId).then(reportWakeFailure);
+  // Gives up on the current start, even one that hangs, and starts again.
+  const restartNow = () => void restart(environmentId).then(reportWakeFailure);
 
   switch (notice.kind) {
     case "asleep":
@@ -92,7 +95,7 @@ export function useTrevizeStartBannerItem(input: {
         description: notice.error ?? undefined,
         actions: (
           <>
-            <Button size="xs" variant="ghost" onClick={wakeNow}>
+            <Button size="xs" variant="ghost" onClick={restartNow}>
               <T>Try again</T>
             </Button>
             {input.actions}
@@ -126,7 +129,14 @@ export function useTrevizeStartBannerItem(input: {
             ) : null}
           </>
         ),
-        actions: input.actions,
+        actions: (
+          <>
+            <Button size="xs" variant="ghost" onClick={restartNow}>
+              <T>Restart</T>
+            </Button>
+            {input.actions}
+          </>
+        ),
       };
     }
   }
